@@ -1,6 +1,3 @@
--- KoShelek: схема базы данных для Supabase
--- Запусти этот скрипт целиком в Supabase SQL Editor
-
 create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
