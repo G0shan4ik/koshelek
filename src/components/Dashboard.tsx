@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { currentMonth, formatMoney, monthTitle } from '../lib/format'
-import { groupByCategory, sumByType, totalBalance } from '../lib/stats'
+import { groupByCategory, sumByType } from '../lib/stats'
 import { Operation } from '../lib/types'
 import { CategoryLegend, DonutChart } from './DonutChart'
 import { MonthPicker } from './MonthPicker'
@@ -27,7 +27,6 @@ export function Dashboard({ onAdd, onEdit, onNavigate }: Props) {
   const [month, setMonth] = useState<string>(currentMonth())
   const cur = settings.currency
 
-  const balance = useMemo(() => totalBalance(operations), [operations])
   const monthOps = useMemo(() => operations.filter(o => o.date.startsWith(month)), [operations, month])
   const income = sumByType(monthOps, 'income')
   const expense = sumByType(monthOps, 'expense')
@@ -50,7 +49,6 @@ export function Dashboard({ onAdd, onEdit, onNavigate }: Props) {
       <section className="card balance-card">
         <span className="balance-label">Баланс за {monthTitle(month).toLowerCase()}</span>
         <span className="balance-value">{formatMoney(income - expense, cur)}</span>
-        <span className="balance-sub">За всё время: {formatMoney(balance, cur)}</span>
       </section>
 
       <MonthPicker month={month} onChange={m => setMonth(m ?? currentMonth())} />
