@@ -1,14 +1,38 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { currentMonth, formatDateLong, formatMoney } from '../lib/format'
+import { currentPeriod, periodMatches, Period } from '../lib/period'
+import { formatDateLong, formatMoney, monthTitle } from '../lib/format'
 import { sumByType } from '../lib/stats'
 import { Operation, OperationType } from '../lib/types'
-import { MonthPicker } from './MonthPicker'
+import { PeriodPicker } from './PeriodPicker'
 import { OperationRow } from './OperationRow'
+
+interface DayGroup {
+  date: string
+  ops: Operation[]
+}
+
+interface MonthGroup {
+  month: string
+  ops: Operation[]
+  days: DayGroup[]
+}
+
+function groupDays(ops: Operation[]): DayGroup[] {
+  const map = new Map<string, Operation[]>()
+  for (const o of ops) {
+    const list = map.get(o.date) ?? []
+    list.push(o)
+    map.set(o.date, list)
+  }
+  return [...map.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([date, list]) => ({ date, ops: list }))
+}
 
 export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; onAdd: () => void }) {
   const { operations, categories, settings } = useApp()
-  const [month, setMonth] = useState<string | null>(currentMonth())
+  const [period, setPeriod] = useState<Period | null>(currentPeriod('month'))
   const [type, setType] = useState<'all' | OperationType>('all')
   const [catId, setCatId] = useState<string>('all')
   const [query, setQuery] = useState('')
@@ -17,7 +41,7 @@ export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; on
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return operations.filter(o => {
-      if (month && !o.date.startsWith(month)) return false
+      if (period && !periodMatches(period, o.date)) return false
       if (type !== 'all' && o.type !== type) return false
       if (catId === 'none' && o.category_id !== null) return false
       if (catId !== 'all' && catId !== 'none' && o.category_id !== catId) return false
@@ -26,20 +50,31 @@ export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; on
       }
       return true
     })
-  }, [operations, month, type, catId, query])
+  }, [operations, period, type, catId, query])
 
-  const groups = useMemo(() => {
+  const monthGroups = useMemo<MonthGroup[]>(() => {
     const map = new Map<string, Operation[]>()
     for (const o of filtered) {
-      const list = map.get(o.date) ?? []
+      const key = o.date.slice(0, 7)
+      const list = map.get(key) ?? []
       list.push(o)
-      map.set(o.date, list)
+      map.set(key, list)
     }
-    return [...map.entries()].map(([date, ops]) => ({ date, ops }))
+    return [...map.entries()]
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([month, ops]) => ({ month, ops, days: groupDays(ops) }))
   }, [filtered])
 
+  const showMonthHeads = period === null || period.kind === 'year'
   const income = sumByType(filtered, 'income')
   const expense = sumByType(filtered, 'expense')
+
+  const sums = (ops: Operation[]) => (
+    <span className="day-sums">
+      {sumByType(ops, 'income') > 0 && <span className="green">+{formatMoney(sumByType(ops, 'income'), cur)}</span>}
+      {sumByType(ops, 'expense') > 0 && <span className="red">−{formatMoney(sumByType(ops, 'expense'), cur)}</span>}
+    </span>
+  )
 
   return (
     <div className="page">
@@ -47,7 +82,7 @@ export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; on
         <h1>История</h1>
       </header>
 
-      <MonthPicker month={month} onChange={setMonth} allowAll />
+      <PeriodPicker period={period} onChange={setPeriod} allowAll />
 
       <div className="filters">
         <input
@@ -83,7 +118,7 @@ export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; on
         <span className="red">−{formatMoney(expense, cur)}</span>
       </section>
 
-      {groups.length === 0 ? (
+      {monthGroups.length === 0 ? (
         <div className="card empty">
           <span>🔍</span>
           <p>Ничего не найдено</p>
@@ -92,24 +127,27 @@ export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; on
           </button>
         </div>
       ) : (
-        groups.map(g => (
-          <section className="card day-group" key={g.date}>
-            <div className="day-head">
-              <span>{formatDateLong(g.date)}</span>
-              <span className="day-sums">
-                {sumByType(g.ops, 'income') > 0 && (
-                  <span className="green">+{formatMoney(sumByType(g.ops, 'income'), cur)}</span>
-                )}
-                {sumByType(g.ops, 'expense') > 0 && (
-                  <span className="red">−{formatMoney(sumByType(g.ops, 'expense'), cur)}</span>
-                )}
-              </span>
-            </div>
-            <div className="op-list">
-              {g.ops.map(op => (
-                <OperationRow key={op.id} op={op} onClick={() => onEdit(op)} />
-              ))}
-            </div>
+        monthGroups.map(mg => (
+          <section className="card day-group" key={mg.month}>
+            {showMonthHeads && (
+              <div className="month-head">
+                <span>{monthTitle(mg.month)}</span>
+                {sums(mg.ops)}
+              </div>
+            )}
+            {mg.days.map(g => (
+              <div className="day-block" key={g.date}>
+                <div className="day-head">
+                  <span>{formatDateLong(g.date)}</span>
+                  {sums(g.ops)}
+                </div>
+                <div className="op-list">
+                  {g.ops.map(op => (
+                    <OperationRow key={op.id} op={op} onClick={() => onEdit(op)} />
+                  ))}
+                </div>
+              </div>
+            ))}
           </section>
         ))
       )}

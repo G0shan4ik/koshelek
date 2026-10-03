@@ -1,37 +1,44 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { currentMonth, formatMoney, shortMonth } from '../lib/format'
+import { currentPeriod, monthsOfYear, periodMatches, Period } from '../lib/period'
+import { formatMoney, shortMonth } from '../lib/format'
 import { groupByCategory, lastMonths, sumByType } from '../lib/stats'
 import { CategoryLegend, DonutChart } from './DonutChart'
 import { MonthBars } from './MonthBars'
-import { MonthPicker } from './MonthPicker'
+import { PeriodPicker } from './PeriodPicker'
 
 export function Stats() {
   const { operations, settings } = useApp()
-  const [month, setMonth] = useState(currentMonth())
+  const [period, setPeriod] = useState<Period>(currentPeriod('month'))
   const cur = settings.currency
 
-  const months = useMemo(() => lastMonths(month, 6), [month])
-  const bars = useMemo(
-    () =>
-      months.map(m => {
-        const ops = operations.filter(o => o.date.startsWith(m))
-        return { label: shortMonth(m), income: sumByType(ops, 'income'), expense: sumByType(ops, 'expense') }
-      }),
-    [months, operations]
-  )
+  const bars = useMemo(() => {
+    const months = period.kind === 'month' ? lastMonths(period.value, 6) : monthsOfYear(period.value)
+    return months.map(m => {
+      const ops = operations.filter(o => o.date.startsWith(m))
+      return { label: shortMonth(m), income: sumByType(ops, 'income'), expense: sumByType(ops, 'expense') }
+    })
+  }, [period, operations])
 
-  const monthOps = useMemo(() => operations.filter(o => o.date.startsWith(month)), [operations, month])
+  const yearBars = useMemo(() => {
+    const years = [...new Set(operations.map(o => o.date.slice(0, 4)))].sort()
+    return years.map(y => {
+      const ops = operations.filter(o => o.date.startsWith(y))
+      return { label: y, income: sumByType(ops, 'income'), expense: sumByType(ops, 'expense') }
+    })
+  }, [operations])
+
+  const periodOps = useMemo(() => operations.filter(o => periodMatches(period, o.date)), [operations, period])
   const expenseByCat = useMemo(
-    () => groupByCategory(monthOps.filter(o => o.type === 'expense')),
-    [monthOps]
+    () => groupByCategory(periodOps.filter(o => o.type === 'expense')),
+    [periodOps]
   )
   const incomeByCat = useMemo(
-    () => groupByCategory(monthOps.filter(o => o.type === 'income')),
-    [monthOps]
+    () => groupByCategory(periodOps.filter(o => o.type === 'income')),
+    [periodOps]
   )
-  const expense = sumByType(monthOps, 'expense')
-  const income = sumByType(monthOps, 'income')
+  const expense = sumByType(periodOps, 'expense')
+  const income = sumByType(periodOps, 'income')
 
   return (
     <div className="page">
@@ -39,10 +46,10 @@ export function Stats() {
         <h1>Отчёты</h1>
       </header>
 
-      <MonthPicker month={month} onChange={m => setMonth(m ?? currentMonth())} />
+      <PeriodPicker period={period} onChange={p => setPeriod(p ?? currentPeriod('month'))} />
 
       <section className="card">
-        <h3>Динамика за 6 месяцев</h3>
+        <h3>{period.kind === 'month' ? 'Динамика за 6 месяцев' : `Динамика по месяцам ${period.value} года`}</h3>
         <div className="bars-legend">
           <span>
             <i className="dot green-dot" /> доходы
@@ -54,6 +61,21 @@ export function Stats() {
         <MonthBars data={bars} currency={cur} />
       </section>
 
+      {period.kind === 'year' && yearBars.length > 1 && (
+        <section className="card">
+          <h3>Динамика по годам</h3>
+          <div className="bars-legend">
+            <span>
+              <i className="dot green-dot" /> доходы
+            </span>
+            <span>
+              <i className="dot red-dot" /> расходы
+            </span>
+          </div>
+          <MonthBars data={yearBars} currency={cur} />
+        </section>
+      )}
+
       <section className="card">
         <h3>Расходы по категориям</h3>
         {expense > 0 ? (
@@ -64,7 +86,7 @@ export function Stats() {
         ) : (
           <div className="empty">
             <span>🌿</span>
-            <p>Нет расходов за этот месяц</p>
+            <p>Нет расходов за этот период</p>
           </div>
         )}
       </section>
@@ -79,7 +101,7 @@ export function Stats() {
         ) : (
           <div className="empty">
             <span>💤</span>
-            <p>Нет доходов за этот месяц</p>
+            <p>Нет доходов за этот период</p>
           </div>
         )}
       </section>

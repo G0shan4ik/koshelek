@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { currentMonth, formatMoney, monthTitle } from '../lib/format'
+import { formatMoney, monthTitle } from '../lib/format'
 import { groupByCategory, sumByType } from '../lib/stats'
 import { Operation } from '../lib/types'
 import { CategoryLegend, DonutChart } from './DonutChart'
-import { MonthPicker } from './MonthPicker'
+import { PeriodPicker } from './PeriodPicker'
 import { OperationRow } from './OperationRow'
 import { Tab } from './BottomNav'
+import { currentPeriod, Period } from '../lib/period'
 
 interface Props {
   onAdd: () => void
@@ -24,7 +25,8 @@ function greeting(): string {
 
 export function Dashboard({ onAdd, onEdit, onNavigate }: Props) {
   const { operations, settings } = useApp()
-  const [month, setMonth] = useState<string>(currentMonth())
+  const [period, setPeriod] = useState<Period>(currentPeriod('month'))
+  const month = period.value
   const cur = settings.currency
 
   const monthOps = useMemo(() => operations.filter(o => o.date.startsWith(month)), [operations, month])
@@ -51,7 +53,7 @@ export function Dashboard({ onAdd, onEdit, onNavigate }: Props) {
         <span className="balance-value">{formatMoney(income - expense, cur)}</span>
       </section>
 
-      <MonthPicker month={month} onChange={m => setMonth(m ?? currentMonth())} />
+      <PeriodPicker period={period} onChange={p => setPeriod(p ?? currentPeriod('month'))} showKind={false} />
 
       <div className="stat-row">
         <div className="card stat-card">
