@@ -178,9 +178,9 @@ export const api = {
     if (error) throw error
   },
 
-  async restoreOperation(op: Operation): Promise<void> {
+  async restoreOperation(op: Operation, restoredMoves: StashMove[]): Promise<void> {
     if (!supabase) {
-      localStore.restoreOperation(op)
+      localStore.restoreOperation(op, restoredMoves)
       return
     }
     const { data: user } = await supabase.auth.getUser()
@@ -195,6 +195,22 @@ export const api = {
       user_id: user.user!.id
     })
     if (error) throw error
+    if (restoredMoves.length > 0) {
+      const { error: moveErr } = await supabase.from('stash_moves').insert(
+        restoredMoves.map(m => ({
+          id: m.id,
+          stash_id: m.stash_id,
+          type: m.type,
+          amount: m.amount,
+          note: m.note,
+          date: m.date,
+          created_at: m.created_at,
+          operation_id: m.operation_id,
+          user_id: user.user!.id
+        }))
+      )
+      if (moveErr) throw moveErr
+    }
   },
 
   async getProfile(): Promise<{ email: string | null; createdAt: string | null }> {
@@ -270,7 +286,7 @@ export const api = {
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
     if (error) throw error
-    return (data ?? []) as StashMove[]
+    return ((data ?? []) as StashMove[]).map(m => ({ ...m, operation_id: m.operation_id ?? null }))
   },
 
   async addStashMove(input: StashMoveInput): Promise<StashMove> {

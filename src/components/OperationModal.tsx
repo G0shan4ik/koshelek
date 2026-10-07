@@ -11,14 +11,13 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
   const [date, setDate] = useState(operation?.date ?? todayISO())
   const [note, setNote] = useState(operation?.note ?? '')
   const [safeAmount, setSafeAmount] = useState('')
-  const [piggyId, setPiggyId] = useState<string | null>(null)
-  const [piggyAmount, setPiggyAmount] = useState('')
+  const [sideAmounts, setSideAmounts] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const cats = categories.filter(c => c.type === type)
   const safe = stashes.find(s => s.kind === 'safe')
-  const piggies = stashes.filter(s => s.kind === 'piggy')
+  const piggies = stashes.filter(s => s.kind === 'piggy' && (s.status ?? 'open') === 'open')
 
   useEffect(() => {
     if (categoryId && !categories.some(c => c.id === categoryId && c.type === type)) {
@@ -36,46 +35,61 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
       return
     }
     const safeVal = parseSide(safeAmount)
-    const piggyVal = parseSide(piggyAmount)
-    if (!Number.isFinite(safeVal) || safeVal < 0 || !Number.isFinite(piggyVal) || piggyVal < 0) {
+    const piggyEntries = piggies.map(p => ({ piggy: p, val: parseSide(sideAmounts[p.id] ?? '') }))
+    const sideTotal = safeVal + piggyEntries.reduce((s, e) => s + e.val, 0)
+    if (!Number.isFinite(safeVal) || safeVal < 0 || piggyEntries.some(e => !Number.isFinite(e.val) || e.val < 0)) {
       setError('Некорректная сумма отложения')
       return
     }
-    if (!operation && type === 'income' && safeVal + piggyVal > value) {
+    if (!operation && type === 'income' && sideTotal > value) {
       setError('Отложить можно не больше суммы дохода')
       return
     }
     setBusy(true)
     setError(null)
     try {
+      const parts: string[] = []
+      if (!operation && type === 'income' && safe && safeVal > 0) parts.push(`${safeVal} в сейф`)
+      if (!operation && type === 'income') {
+        for (const e of piggyEntries) {
+          if (e.val > 0) parts.push(`${e.val} в копилку «${e.piggy.name}»`)
+        }
+      }
+      const fullNote = [note.trim(), parts.length > 0 ? `из них ${parts.join(', ')}` : '']
+        .filter(Boolean)
+        .join(' · ')
       const input = {
         type,
         amount: Math.round(value * 100) / 100,
         category_id: categoryId,
-        note: note.trim() || null,
+        note: fullNote || null,
         date
       }
       if (operation) {
         await updateOperation(operation.id, input)
       } else {
-        await addOperation(input)
+        const created = await addOperation(input)
         if (safe && safeVal > 0) {
           await addStashMove({
             stash_id: safe.id,
             type: 'in',
             amount: Math.round(safeVal * 100) / 100,
             note: 'С дохода',
-            date
+            date,
+            operation_id: created.id
           })
         }
-        if (piggyId && piggyVal > 0) {
-          await addStashMove({
-            stash_id: piggyId,
-            type: 'in',
-            amount: Math.round(piggyVal * 100) / 100,
-            note: 'С дохода',
-            date
-          })
+        for (const e of piggyEntries) {
+          if (e.val > 0) {
+            await addStashMove({
+              stash_id: e.piggy.id,
+              type: 'in',
+              amount: Math.round(e.val * 100) / 100,
+              note: 'С дохода',
+              date,
+              operation_id: created.id
+            })
+          }
         }
       }
       onClose()
@@ -152,28 +166,30 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
                     onChange={e => setSafeAmount(e.target.value.replace(/[^\d.,]/g, '').slice(0, 15))}
                   />
                 </div>
-                {piggies.length > 0 && (
-                  <div className="setaside-row">
-                    <select
-                      className="input setaside-select"
-                      value={piggyId ?? ''}
-                      onChange={e => setPiggyId(e.target.value || null)}
-                    >
-                      <option value="">В копилку…</option>
-                      {piggies.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.icon} {p.name}
-                        </option>
-                      ))}
-                    </select>
+                {piggies.map(p => (
+                  <div className="setaside-row" key={p.id}>
+                    <span className="op-icon" style={{ background: p.color + '26' }}>
+                      {p.icon}
+                    </span>
+                    <span className="setaside-name">{p.name}</span>
                     <input
                       className="input setaside-input"
                       inputMode="decimal"
                       placeholder="0"
-                      value={piggyAmount}
-                      onChange={e => setPiggyAmount(e.target.value.replace(/[^\d.,]/g, '').slice(0, 15))}
+                      value={sideAmounts[p.id] ?? ''}
+                      onChange={e =>
+                        setSideAmounts(prev => ({
+                          ...prev,
+                          [p.id]: e.target.value.replace(/[^\d.,]/g, '').slice(0, 15)
+                        }))
+                      }
                     />
                   </div>
+                ))}
+                {piggies.length === 0 && (
+                  <span className="setaside-hint muted small">
+                    копилок пока нет — создать можно во вкладке «Копилка»
+                  </span>
                 )}
               </div>
             </>

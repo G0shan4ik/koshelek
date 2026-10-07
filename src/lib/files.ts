@@ -1,5 +1,4 @@
-import { Category, Operation } from './types'
-import { formatDateLong } from './format'
+import { Category, Operation, Stash, StashMove } from './types'
 
 function download(filename: string, content: string, mime: string): void {
   const blob = new Blob([content], { type: mime })
@@ -26,12 +25,23 @@ export function exportCsv(operations: Operation[], currency: string): void {
   download('koshelok-operations.csv', csv, 'text/csv;charset=utf-8')
 }
 
-export function exportJson(operations: Operation[], categories: Category[]): void {
-  const payload = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), categories, operations }, null, 2)
+export function exportJson(
+  operations: Operation[],
+  categories: Category[],
+  stashes: Stash[],
+  stashMoves: StashMove[]
+): void {
+  const payload = JSON.stringify(
+    { version: 2, exportedAt: new Date().toISOString(), categories, operations, stashes, stashMoves },
+    null,
+    2
+  )
   download('koshelok-backup.json', payload, 'application/json')
 }
 
-export function importJson(file: File): Promise<{ categories: Category[]; operations: Operation[] }> {
+export function importJson(
+  file: File
+): Promise<{ categories: Category[]; operations: Operation[]; stashes: Stash[]; stashMoves: StashMove[] }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {
@@ -41,7 +51,12 @@ export function importJson(file: File): Promise<{ categories: Category[]; operat
           reject(new Error('Неверный формат файла'))
           return
         }
-        resolve({ categories: parsed.categories, operations: parsed.operations })
+        resolve({
+          categories: parsed.categories,
+          operations: parsed.operations,
+          stashes: Array.isArray(parsed.stashes) ? parsed.stashes : [],
+          stashMoves: Array.isArray(parsed.stashMoves) ? parsed.stashMoves : []
+        })
       } catch {
         reject(new Error('Файл повреждён или не является JSON'))
       }
@@ -50,9 +65,3 @@ export function importJson(file: File): Promise<{ categories: Category[]; operat
     reader.readAsText(file)
   })
 }
-
-export function backupName(dateIso: string): string {
-  return `koshelok-${dateIso}`
-}
-
-export { formatDateLong }

@@ -48,7 +48,7 @@ export function SettingsTab() {
     try {
       const data = await importJson(file)
       if (window.confirm('Заменить текущие данные данными из файла?')) {
-        importLocalData(data.categories, data.operations)
+        importLocalData(data.categories, data.operations, data.stashes, data.stashMoves)
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Ошибка импорта')
@@ -243,7 +243,10 @@ export function SettingsTab() {
               <button className="btn btn-secondary" onClick={() => exportCsv(operations, settings.currency)}>
                 Скачать CSV (для Excel)
               </button>
-              <button className="btn btn-secondary" onClick={() => exportJson(operations, categories)}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => exportJson(operations, categories, stashes, stashMoves)}
+              >
                 Скачать резервную копию (JSON)
               </button>
             </div>

@@ -50,6 +50,7 @@ export interface StashMove {
   note: string | null
   date: string
   created_at: string
+  operation_id: string | null
 }
 
 export type StashMoveInput = Omit<StashMove, 'id' | 'created_at'>

@@ -44,10 +44,10 @@ interface AppContextValue {
   signUp: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
   changePassword: (password: string) => Promise<void>
-  addOperation: (input: OperationInput) => Promise<void>
+  addOperation: (input: OperationInput) => Promise<Operation>
   updateOperation: (id: string, input: OperationInput) => Promise<void>
   deleteOperation: (id: string) => Promise<void>
-  pendingDelete: Operation | null
+  pendingDelete: { op: Operation; moves: StashMove[] } | null
   undoDelete: () => Promise<void>
   addCategory: (input: CategoryInput) => Promise<void>
   updateCategory: (id: string, input: CategoryInput) => Promise<void>
@@ -59,7 +59,12 @@ interface AppContextValue {
   addStashMove: (input: StashMoveInput) => Promise<void>
   refresh: () => Promise<void>
   resetLocalData: () => void
-  importLocalData: (categories: Category[], operations: Operation[]) => void
+  importLocalData: (
+    categories: Category[],
+    operations: Operation[],
+    stashes?: Stash[],
+    moves?: StashMove[]
+  ) => void
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
@@ -198,9 +203,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await api.changePassword(password)
   }
 
-  const addOperation = async (input: OperationInput): Promise<void> => {
+  const addOperation = async (input: OperationInput): Promise<Operation> => {
     const op = await api.addOperation(input)
     setOperations(prev => sortByDateDesc([op, ...prev]))
+    return op
   }
 
   const updateOperation = async (id: string, input: OperationInput): Promise<void> => {
@@ -214,7 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  const [pendingDelete, setPendingDelete] = useState<Operation | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ op: Operation; moves: StashMove[] } | null>(null)
   const deleteTimer = useRef<number | null>(null)
 
   const clearDeleteTimer = () => {
@@ -227,20 +233,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteOperation = async (id: string): Promise<void> => {
     const op = operations.find(o => o.id === id)
     if (!op) return
+    const linkedMoves = stashMoves.filter(m => m.operation_id === id)
     await api.deleteOperation(id)
     setOperations(prev => prev.filter(o => o.id !== id))
+    setStashMoves(prev => prev.filter(m => m.operation_id !== id))
     clearDeleteTimer()
-    setPendingDelete(op)
+    setPendingDelete({ op, moves: linkedMoves })
     deleteTimer.current = window.setTimeout(() => setPendingDelete(null), 8000)
   }
 
   const undoDelete = async (): Promise<void> => {
-    const op = pendingDelete
-    if (!op) return
+    const pending = pendingDelete
+    if (!pending) return
     clearDeleteTimer()
     setPendingDelete(null)
-    await api.restoreOperation(op)
-    setOperations(prev => sortByDateDesc([op, ...prev]))
+    await api.restoreOperation(pending.op, pending.moves)
+    setOperations(prev => sortByDateDesc([pending.op, ...prev]))
+    setStashMoves(prev => sortByDateDesc([...pending.moves, ...prev]))
   }
 
   const addCategory = async (input: CategoryInput): Promise<void> => {
@@ -295,7 +304,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         type: 'out',
         amount: Math.round(bal * 100) / 100,
         note: reason === 'return' ? 'Возврат в баланс' : 'Копилка разбита',
-        date
+        date,
+        operation_id: null
       })
       if (reason === 'spent') {
         await addOperation({
@@ -326,12 +336,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setStashMoves(localStore.listStashMoves())
   }
 
-  const importLocalData = (cats: Category[], ops: Operation[]): void => {
+  const importLocalData = (
+    cats: Category[],
+    ops: Operation[],
+    sts: Stash[] = [],
+    mvs: StashMove[] = []
+  ): void => {
     localStore.resetAll()
     const catMap = new Map(cats.map(c => [c.id, c]))
     const storedOps: Operation[] = ops.map(o => ({ ...o, category: null }))
     localStorage.setItem('koshelok:categories', JSON.stringify(cats))
     localStorage.setItem('koshelok:operations', JSON.stringify(storedOps))
+    localStorage.setItem('koshelok:stashes', JSON.stringify(sts))
+    localStorage.setItem('koshelok:stash-moves', JSON.stringify(mvs))
     setCategories(cats)
     setOperations(storedOps.map(o => ({ ...o, category: catMap.get(o.category_id ?? '') ?? null })))
     setStashes(localStore.ensureSafe())

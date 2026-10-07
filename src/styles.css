@@ -295,14 +295,15 @@ h3 {
 }
 
 .setaside-input {
-  width: 110px;
+  width: 96px;
   flex-shrink: 0;
   text-align: right;
+  padding: 9px 12px;
 }
 
-.setaside-select {
-  flex: 1;
-  min-width: 0;
+.setaside-hint {
+  display: block;
+  padding: 2px 2px 4px;
 }
 
 .stash-hint {

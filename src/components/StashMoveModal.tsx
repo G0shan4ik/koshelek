@@ -40,7 +40,8 @@ export function StashMoveModal({ stash, initialType, onClose }: Props) {
         type,
         amount: Math.round(value * 100) / 100,
         note: note.trim() || null,
-        date: todayISO()
+        date: todayISO(),
+        operation_id: null
       })
       onClose()
     } catch (err) {

@@ -66,11 +66,13 @@ export const localStore = {
   updateOperation(id: string, input: OperationInput): void {
     write(OPS_KEY, operations().map(o => (o.id === id ? { ...o, ...input } : o)))
   },
-  restoreOperation(op: Operation): void {
+  restoreOperation(op: Operation, restoredMoves: StashMove[]): void {
     write(OPS_KEY, [...operations(), op])
+    write(MOVE_KEY, [...moves(), ...restoredMoves])
   },
   deleteOperation(id: string): void {
     write(OPS_KEY, operations().filter(o => o.id !== id))
+    write(MOVE_KEY, moves().filter(m => m.operation_id !== id))
   },
   listStashes(): Stash[] {
     return stashes()
