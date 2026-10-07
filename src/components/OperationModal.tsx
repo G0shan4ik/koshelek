@@ -230,11 +230,13 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
                 Отложить с дохода{isForeign ? `, суммы в ${settings.currency}` : ''}
               </label>
               <div className="setaside">
-                <div className="setaside-row">
-                  <span className="op-icon" style={{ background: (safe?.color ?? '#ffd60a') + '26' }}>
-                    {safe?.icon ?? '🔐'}
+                <div className="setaside-col">
+                  <span className="setaside-label">
+                    <span className="op-icon" style={{ background: (safe?.color ?? '#ffd60a') + '26' }}>
+                      {safe?.icon ?? '🔐'}
+                    </span>
+                    В сейф
                   </span>
-                  <span className="setaside-name">В сейф</span>
                   <input
                     className="input setaside-input"
                     inputMode="decimal"
@@ -244,11 +246,13 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
                   />
                 </div>
                 {piggies.map(p => (
-                  <div className="setaside-row" key={p.id}>
-                    <span className="op-icon" style={{ background: p.color + '26' }}>
-                      {p.icon}
+                  <div className="setaside-col" key={p.id}>
+                    <span className="setaside-label">
+                      <span className="op-icon" style={{ background: p.color + '26' }}>
+                        {p.icon}
+                      </span>
+                      {p.name}
                     </span>
-                    <span className="setaside-name">{p.name}</span>
                     <input
                       className="input setaside-input"
                       inputMode="decimal"
