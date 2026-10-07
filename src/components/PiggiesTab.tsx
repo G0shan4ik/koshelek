@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { formatDateLong, formatMoney } from '../lib/format'
+import { formatDateLong, formatMoney, formatOrig } from '../lib/format'
 import { stashBalance } from '../lib/stats'
 import { Stash } from '../lib/types'
 import { PiggyModal } from './PiggyModal'
@@ -103,9 +103,12 @@ export function PiggiesTab() {
                       <span className="move-note">
                         {p?.icon} {m.note ?? p?.name}
                       </span>
-                      <span className={m.type === 'in' ? 'green' : 'red'}>
-                        {m.type === 'in' ? '+' : '−'}
-                        {formatMoney(m.amount, cur)}
+                      <span className="op-amount-col">
+                        <span className={m.type === 'in' ? 'green' : 'red'}>
+                          {m.type === 'in' ? '+' : '−'}
+                          {m.currency !== cur ? formatOrig(m.amount_orig, m.currency) : formatMoney(m.amount, cur)}
+                        </span>
+                        {m.currency !== cur && <span className="op-sub">≈ {formatMoney(m.amount, cur)}</span>}
                       </span>
                     </div>
                   )

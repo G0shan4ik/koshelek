@@ -1,9 +1,9 @@
 import { ChangeEvent, useRef, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { CURRENCIES, formatDateLong, formatMoney } from '../lib/format'
+import { CURRENCIES, formatDateLong, formatMoney, formatOrig } from '../lib/format'
 import { exportCsv, exportJson, importJson } from '../lib/files'
 import { stashBalance } from '../lib/stats'
-import { Category, Stash } from '../lib/types'
+import { Category, Stash, StashMove } from '../lib/types'
 import { CategoryModal } from './CategoryModal'
 import { StashMoveModal } from './StashMoveModal'
 
@@ -92,16 +92,22 @@ export function SettingsTab() {
     </button>
   )
 
-  const moveRow = (mId: string, date: string, note: string | null, type: 'in' | 'out', amount: number) => (
-    <div className="move-row" key={mId}>
-      <span className="move-date">{formatDateLong(date)}</span>
-      <span className="move-note">{note ?? (type === 'in' ? 'Пополнение' : 'Снятие')}</span>
-      <span className={type === 'in' ? 'green' : 'red'}>
-        {type === 'in' ? '+' : '−'}
-        {formatMoney(amount, cur)}
-      </span>
-    </div>
-  )
+  const moveRow = (m: StashMove) => {
+    const foreign = m.currency !== cur
+    return (
+      <div className="move-row" key={m.id}>
+        <span className="move-date">{formatDateLong(m.date)}</span>
+        <span className="move-note">{m.note ?? (m.type === 'in' ? 'Пополнение' : 'Снятие')}</span>
+        <span className="op-amount-col">
+          <span className={m.type === 'in' ? 'green' : 'red'}>
+            {m.type === 'in' ? '+' : '−'}
+            {foreign ? formatOrig(m.amount_orig, m.currency) : formatMoney(m.amount, cur)}
+          </span>
+          {foreign && <span className="op-sub">≈ {formatMoney(m.amount, cur)}</span>}
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div className="page">
@@ -290,7 +296,7 @@ export function SettingsTab() {
           <section className="card">
             <h3>История сейфа</h3>
             {safeMoves.length > 0 ? (
-              <div className="op-list">{safeMoves.map(m => moveRow(m.id, m.date, m.note, m.type, m.amount))}</div>
+              <div className="op-list">{safeMoves.map(m => moveRow(m))}</div>
             ) : (
               <div className="empty">
                 <span></span>
