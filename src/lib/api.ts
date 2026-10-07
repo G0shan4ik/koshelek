@@ -178,6 +178,25 @@ export const api = {
     if (error) throw error
   },
 
+  async restoreOperation(op: Operation): Promise<void> {
+    if (!supabase) {
+      localStore.restoreOperation(op)
+      return
+    }
+    const { data: user } = await supabase.auth.getUser()
+    const { error } = await supabase.from('operations').insert({
+      id: op.id,
+      type: op.type,
+      amount: op.amount,
+      category_id: op.category_id,
+      note: op.note,
+      date: op.date,
+      created_at: op.created_at,
+      user_id: user.user!.id
+    })
+    if (error) throw error
+  },
+
   async getProfile(): Promise<{ email: string | null; createdAt: string | null }> {
     if (!supabase) return { email: null, createdAt: null }
     const { data } = await supabase.auth.getUser()

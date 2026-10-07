@@ -8,6 +8,7 @@ import { Stats } from './components/Stats'
 import { PiggiesTab } from './components/PiggiesTab'
 import { SettingsTab } from './components/SettingsTab'
 import { OperationModal } from './components/OperationModal'
+import { Snackbar } from './components/Snackbar'
 import { Operation } from './lib/types'
 
 function Splash() {
@@ -20,7 +21,7 @@ function Splash() {
 }
 
 export default function App() {
-  const { mode, authLoading, userId, dataLoading, offline } = useApp()
+  const { mode, authLoading, userId, dataLoading, offline, pendingDelete, undoDelete } = useApp()
   const [tab, setTab] = useState<Tab>('dashboard')
   const [editing, setEditing] = useState<Operation | 'new' | null>(null)
 
@@ -44,6 +45,9 @@ export default function App() {
         <button className="fab" onClick={() => setEditing('new')} aria-label="Добавить операцию">
           +
         </button>
+      )}
+      {pendingDelete && (
+        <Snackbar message="Операция удалена" actionLabel="Отменить" onAction={() => void undoDelete()} />
       )}
       <BottomNav tab={tab} onChange={setTab} />
       {editing && <OperationModal operation={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

@@ -66,6 +66,9 @@ export const localStore = {
   updateOperation(id: string, input: OperationInput): void {
     write(OPS_KEY, operations().map(o => (o.id === id ? { ...o, ...input } : o)))
   },
+  restoreOperation(op: Operation): void {
+    write(OPS_KEY, [...operations(), op])
+  },
   deleteOperation(id: string): void {
     write(OPS_KEY, operations().filter(o => o.id !== id))
   },

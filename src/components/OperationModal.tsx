@@ -87,7 +87,6 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
 
   const remove = async () => {
     if (!operation) return
-    if (!window.confirm('Удалить операцию?')) return
     setBusy(true)
     try {
       await deleteOperation(operation.id)

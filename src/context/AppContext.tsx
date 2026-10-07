@@ -1,4 +1,4 @@
-﻿import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
+﻿import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { api, cloudEnabled } from '../lib/api'
 import { localStore } from '../lib/localStore'
 import {
@@ -47,6 +47,8 @@ interface AppContextValue {
   addOperation: (input: OperationInput) => Promise<void>
   updateOperation: (id: string, input: OperationInput) => Promise<void>
   deleteOperation: (id: string) => Promise<void>
+  pendingDelete: Operation | null
+  undoDelete: () => Promise<void>
   addCategory: (input: CategoryInput) => Promise<void>
   updateCategory: (id: string, input: CategoryInput) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
@@ -95,6 +97,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setStashes([])
         setStashMoves([])
         setProfile(null)
+        setPendingDelete(null)
         setDataLoading(false)
       }
     })
@@ -211,9 +214,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     )
   }
 
+  const [pendingDelete, setPendingDelete] = useState<Operation | null>(null)
+  const deleteTimer = useRef<number | null>(null)
+
+  const clearDeleteTimer = () => {
+    if (deleteTimer.current !== null) {
+      window.clearTimeout(deleteTimer.current)
+      deleteTimer.current = null
+    }
+  }
+
   const deleteOperation = async (id: string): Promise<void> => {
+    const op = operations.find(o => o.id === id)
+    if (!op) return
     await api.deleteOperation(id)
     setOperations(prev => prev.filter(o => o.id !== id))
+    clearDeleteTimer()
+    setPendingDelete(op)
+    deleteTimer.current = window.setTimeout(() => setPendingDelete(null), 8000)
+  }
+
+  const undoDelete = async (): Promise<void> => {
+    const op = pendingDelete
+    if (!op) return
+    clearDeleteTimer()
+    setPendingDelete(null)
+    await api.restoreOperation(op)
+    setOperations(prev => sortByDateDesc([op, ...prev]))
   }
 
   const addCategory = async (input: CategoryInput): Promise<void> => {
@@ -332,6 +359,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addOperation,
     updateOperation,
     deleteOperation,
+    pendingDelete,
+    undoDelete,
     addCategory,
     updateCategory,
     deleteCategory,
