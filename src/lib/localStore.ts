@@ -1,4 +1,14 @@
-import { Category, CategoryInput, Operation, OperationInput, Stash, StashInput, StashMove, StashMoveInput } from './types'
+import {
+  Category,
+  CategoryInput,
+  ManualRate,
+  Operation,
+  OperationInput,
+  Stash,
+  StashInput,
+  StashMove,
+  StashMoveInput
+} from './types'
 import { defaultCategories, uid } from './defaults'
 import { sortByDateDesc } from './stats'
 
@@ -6,6 +16,7 @@ const OPS_KEY = 'koshelok:operations'
 const CATS_KEY = 'koshelok:categories'
 const STASH_KEY = 'koshelok:stashes'
 const MOVE_KEY = 'koshelok:stash-moves'
+const RATE_KEY = 'koshelok:rates'
 
 function read<T>(key: string): T | null {
   try {
@@ -112,9 +123,30 @@ export const localStore = {
     return sortByDateDesc(moves())
   },
   addStashMove(input: StashMoveInput): StashMove {
-    const move: StashMove = { ...input, id: uid(), created_at: new Date().toISOString() }
+    const move: StashMove = {
+      ...input,
+      id: uid(),
+      created_at: new Date().toISOString(),
+      operation_id: input.operation_id ?? null
+    }
     write(MOVE_KEY, [...moves(), move])
     return move
+  },
+  listRates(): ManualRate[] {
+    return read<ManualRate[]>(RATE_KEY) ?? []
+  },
+  upsertRate(code: string, rate: number | null): void {
+    const list = read<ManualRate[]>(RATE_KEY) ?? []
+    if (rate === null) {
+      write(RATE_KEY, list.filter(r => r.code !== code))
+      return
+    }
+    const existing = list.find(r => r.code === code)
+    if (existing) {
+      write(RATE_KEY, list.map(r => (r.code === code ? { ...r, rate } : r)))
+    } else {
+      write(RATE_KEY, [...list, { id: uid(), code, rate }])
+    }
   },
   resetAll(): void {
     localStorage.removeItem(OPS_KEY)

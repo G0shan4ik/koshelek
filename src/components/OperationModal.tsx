@@ -1,11 +1,14 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { todayISO } from '../lib/format'
+import { formatMoney, todayISO } from '../lib/format'
 import { Operation, OperationType } from '../lib/types'
 
 export function OperationModal({ operation, onClose }: { operation: Operation | null; onClose: () => void }) {
-  const { categories, addOperation, updateOperation, deleteOperation, stashes, addStashMove } = useApp()
+  const { categories, addOperation, updateOperation, deleteOperation, stashes, addStashMove, settings, rateFor } =
+    useApp()
   const [type, setType] = useState<OperationType>(operation?.type ?? 'expense')
+  const [currency, setCurrency] = useState(operation?.currency ?? settings.currency)
+  const [rateStr, setRateStr] = useState('')
   const [amount, setAmount] = useState(operation ? String(operation.amount).replace('.', ',') : '')
   const [categoryId, setCategoryId] = useState<string | null>(operation?.category_id ?? null)
   const [date, setDate] = useState(operation?.date ?? todayISO())
@@ -18,6 +21,32 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
   const cats = categories.filter(c => c.type === type)
   const safe = stashes.find(s => s.kind === 'safe')
   const piggies = stashes.filter(s => s.kind === 'piggy' && (s.status ?? 'open') === 'open')
+  const isForeign = currency !== settings.currency
+  const currencyOptions = [settings.currency, ...settings.currencies]
+
+  useEffect(() => {
+    if (currency === settings.currency) {
+      setRateStr('')
+      return
+    }
+    if (operation && operation.currency === currency) {
+      setRateStr(String(operation.rate).replace('.', ','))
+      return
+    }
+    const auto = rateFor(currency)
+    setRateStr(auto !== null ? String(auto).replace('.', ',') : '')
+  }, [currency, settings.currency, rateFor, operation])
+
+  const parsedRate = (): number => {
+    if (!isForeign) return 1
+    const r = Number(rateStr.replace(',', '.'))
+    return Number.isFinite(r) && r > 0 ? r : NaN
+  }
+
+  const fxHint = (code: string): string => {
+    const r = rateFor(code)
+    return r !== null ? String(r).replace('.', ',') : 'курс'
+  }
 
   useEffect(() => {
     if (categoryId && !categories.some(c => c.id === categoryId && c.type === type)) {
@@ -34,6 +63,11 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
       setError('Введи сумму больше нуля')
       return
     }
+    const rate = parsedRate()
+    if (isForeign && !Number.isFinite(rate)) {
+      setError('Укажи курс больше нуля')
+      return
+    }
     const safeVal = parseSide(safeAmount)
     const piggyEntries = piggies.map(p => ({ piggy: p, val: parseSide(sideAmounts[p.id] ?? '') }))
     const sideTotal = safeVal + piggyEntries.reduce((s, e) => s + e.val, 0)
@@ -41,7 +75,8 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
       setError('Некорректная сумма отложения')
       return
     }
-    if (!operation && type === 'income' && sideTotal > value) {
+    const baseValue = value * (Number.isFinite(rate) ? rate : 1)
+    if (!operation && type === 'income' && sideTotal > baseValue) {
       setError('Отложить можно не больше суммы дохода')
       return
     }
@@ -60,10 +95,13 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
         .join(' · ')
       const input = {
         type,
-        amount: Math.round(value * 100) / 100,
+        amount: Math.round(value * (Number.isFinite(rate) ? rate : 1) * 100) / 100,
         category_id: categoryId,
         note: fullNote || null,
-        date
+        date,
+        currency,
+        amount_orig: Math.round(value * 100) / 100,
+        rate: Number.isFinite(rate) ? rate : 1
       }
       if (operation) {
         await updateOperation(operation.id, input)
@@ -76,7 +114,10 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
             amount: Math.round(safeVal * 100) / 100,
             note: 'С дохода',
             date,
-            operation_id: created.id
+            operation_id: created.id,
+            currency: settings.currency,
+            amount_orig: Math.round(safeVal * 100) / 100,
+            rate: 1
           })
         }
         for (const e of piggyEntries) {
@@ -87,7 +128,10 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
               amount: Math.round(e.val * 100) / 100,
               note: 'С дохода',
               date,
-              operation_id: created.id
+              operation_id: created.id,
+              currency: settings.currency,
+              amount_orig: Math.round(e.val * 100) / 100,
+              rate: 1
             })
           }
         }
@@ -138,6 +182,19 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
             </button>
           </div>
 
+          {currencyOptions.length > 1 && (
+            <>
+              <label className="field-label">Валюта</label>
+              <select className="input" value={currency} onChange={e => setCurrency(e.target.value)}>
+                {currencyOptions.map(c => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+
           <div className="amount-field">
             <input
               className="amount-input"
@@ -149,9 +206,29 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
             />
           </div>
 
+          {isForeign && (
+            <div className="rate-block">
+              <label className="field-label">Курс, {settings.currency} за 1 {currency}</label>
+              <input
+                className="input"
+                inputMode="decimal"
+                placeholder={fxHint(currency)}
+                value={rateStr}
+                onChange={e => setRateStr(e.target.value.replace(/[^\d.,]/g, '').slice(0, 15))}
+              />
+              {Number(amount.replace(',', '.')) > 0 && Number.isFinite(parsedRate()) && (
+                <p className="muted small rate-preview">
+                  ≈ {formatMoney(Math.round(Number(amount.replace(',', '.')) * parsedRate() * 100) / 100, settings.currency)}
+                </p>
+              )}
+            </div>
+          )}
+
           {type === 'income' && !operation && (
             <>
-              <label className="field-label">Отложить с дохода</label>
+              <label className="field-label">
+                Отложить с дохода{isForeign ? `, суммы в ${settings.currency}` : ''}
+              </label>
               <div className="setaside">
                 <div className="setaside-row">
                   <span className="op-icon" style={{ background: (safe?.color ?? '#ffd60a') + '26' }}>

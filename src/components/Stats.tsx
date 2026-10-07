@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { currentPeriod, monthsOfYear, periodMatches, Period } from '../lib/period'
-import { formatMoney, shortMonth } from '../lib/format'
+import { formatMoney, formatOrig, shortMonth } from '../lib/format'
 import { groupByCategory, lastMonths, sumByType } from '../lib/stats'
 import { CategoryLegend, DonutChart } from './DonutChart'
 import { MonthBars } from './MonthBars'
@@ -40,6 +40,23 @@ export function Stats() {
   const expense = sumByType(periodOps, 'expense')
   const income = sumByType(periodOps, 'income')
 
+  const byCurrency = useMemo(() => {
+    const map = new Map<string, { income: number; expense: number; baseNet: number }>()
+    for (const o of periodOps) {
+      const e = map.get(o.currency) ?? { income: 0, expense: 0, baseNet: 0 }
+      if (o.type === 'income') {
+        e.income += o.amount_orig
+        e.baseNet += o.amount
+      } else {
+        e.expense += o.amount_orig
+        e.baseNet -= o.amount
+      }
+      map.set(o.currency, e)
+    }
+    return [...map.entries()]
+  }, [periodOps])
+  const hasForeign = byCurrency.some(([code]) => code !== settings.currency)
+
   return (
     <div className="page">
       <header className="page-head">
@@ -73,6 +90,22 @@ export function Stats() {
             </span>
           </div>
           <MonthBars data={yearBars} currency={cur} />
+        </section>
+      )}
+
+      {hasForeign && (
+        <section className="card">
+          <h3>По валютам</h3>
+          <div className="legend">
+            {byCurrency.map(([code, v]) => (
+              <div className="legend-row" key={code}>
+                <span className="legend-name">{code}</span>
+                <span className="green">+{formatOrig(v.income, code)}</span>
+                <span className="red">−{formatOrig(v.expense, code)}</span>
+                <span className="legend-sum">≈ {formatMoney(v.baseNet, settings.currency)}</span>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

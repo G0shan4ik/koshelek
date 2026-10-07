@@ -18,8 +18,27 @@ export function formatMoney(value: number, currency: string): string {
       minimumFractionDigits: 0
     }).format(value)
   } catch {
-    return value.toFixed(2)
+    return `${value.toFixed(2)} ${currency}`
   }
+}
+
+export function currencySymbol(currency: string): string {
+  try {
+    const part = new Intl.NumberFormat('ru-RU', { style: 'currency', currency })
+      .formatToParts(0)
+      .find(p => p.type === 'currency')
+    return part?.value ?? currency
+  } catch {
+    return currency
+  }
+}
+
+export function formatOrig(value: number, currency: string): string {
+  const formatted = new Intl.NumberFormat('ru-RU', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0
+  }).format(value)
+  return `${formatted} ${currencySymbol(currency)}`
 }
 
 function pad(n: number): string {

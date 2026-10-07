@@ -35,8 +35,10 @@ export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; on
   const [period, setPeriod] = useState<Period | null>(currentPeriod('month'))
   const [type, setType] = useState<'all' | OperationType>('all')
   const [catId, setCatId] = useState<string>('all')
+  const [curFilter, setCurFilter] = useState<string>('all')
   const [query, setQuery] = useState('')
   const cur = settings.currency
+  const usedCurrencies = [...new Set(operations.map(o => o.currency))]
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -45,12 +47,13 @@ export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; on
       if (type !== 'all' && o.type !== type) return false
       if (catId === 'none' && o.category_id !== null) return false
       if (catId !== 'all' && catId !== 'none' && o.category_id !== catId) return false
+      if (curFilter !== 'all' && o.currency !== curFilter) return false
       if (q && !(o.note ?? '').toLowerCase().includes(q) && !(o.category?.name ?? '').toLowerCase().includes(q)) {
         return false
       }
       return true
     })
-  }, [operations, period, type, catId, query])
+  }, [operations, period, type, catId, curFilter, query])
 
   const monthGroups = useMemo<MonthGroup[]>(() => {
     const map = new Map<string, Operation[]>()
@@ -97,6 +100,16 @@ export function History({ onEdit, onAdd }: { onEdit: (op: Operation) => void; on
               {t === 'all' ? 'Все' : t === 'income' ? 'Доходы' : 'Расходы'}
             </button>
           ))}
+          {usedCurrencies.length > 1 && (
+            <select className="input cur-select" value={curFilter} onChange={e => setCurFilter(e.target.value)}>
+              <option value="all">Все валюты</option>
+              {usedCurrencies.map(c => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="chip-row scroll">
           <button className={'chip' + (catId === 'all' ? ' active' : '')} onClick={() => setCatId('all')}>

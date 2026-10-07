@@ -23,8 +23,14 @@ export function SettingsTab() {
     resetLocalData,
     importLocalData,
     stashes,
-    stashMoves
+    stashMoves,
+    fx,
+    manualRates,
+    overrideRate,
+    addCurrency,
+    removeCurrency
   } = useApp()
+  const [newCur, setNewCur] = useState('')
   const [section, setSection] = useState<Section>('profile')
   const [editingCat, setEditingCat] = useState<Category | 'new' | null>(null)
   const [moving, setMoving] = useState<{ stash: Stash; type: 'in' | 'out' } | null>(null)
@@ -142,14 +148,74 @@ export function SettingsTab() {
           </section>
 
           <section className="card">
-            <h3>Валюта</h3>
+            <h3>Валюта и курсы</h3>
             <select className="input" value={settings.currency} onChange={e => setCurrency(e.target.value)}>
-              {CURRENCIES.map(c => (
-                <option key={c.code} value={c.code}>
-                  {c.label}
+              {[...new Set([...CURRENCIES.map(c => c.code), ...settings.currencies])].map(code => (
+                <option key={code} value={code}>
+                  {CURRENCIES.find(c => c.code === code)?.label ?? code}
                 </option>
               ))}
             </select>
+            {settings.currencies.length > 0 && (
+              <div className="rate-rows">
+                {settings.currencies.map(code => {
+                  const manual = manualRates.find(r => r.code === code)
+                  const auto = fx[code]
+                  return (
+                    <div className="rate-row" key={code}>
+                      <span className="rate-code">{code}</span>
+                      <input
+                        className="input rate-input"
+                        inputMode="decimal"
+                        defaultValue={manual ? String(manual.rate).replace('.', ',') : ''}
+                        placeholder={`авто: ${auto !== undefined ? String(auto).replace('.', ',') : '—'}`}
+                        onBlur={e => {
+                          const raw = e.target.value.trim().replace(',', '.')
+                          if (raw === '') {
+                            if (manual) void overrideRate(code, null)
+                            return
+                          }
+                          const num = Number(raw)
+                          if (Number.isFinite(num) && num > 0 && num !== manual?.rate) void overrideRate(code, num)
+                        }}
+                      />
+                      <button
+                        className="icon-btn"
+                        aria-label={`Убрать ${code}`}
+                        onClick={() => {
+                          if (window.confirm(`Убрать валюту ${code}? Операции в ней сохранятся.`)) {
+                            void overrideRate(code, null)
+                            removeCurrency(code)
+                          }
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div className="rate-add">
+              <input
+                className="input"
+                placeholder="Добавить валюту (USD, EUR…)"
+                value={newCur}
+                onChange={e => setNewCur(e.target.value.toUpperCase().slice(0, 3))}
+              />
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  addCurrency(newCur)
+                  setNewCur('')
+                }}
+              >
+                +
+              </button>
+            </div>
+            <p className="muted small">
+              Курсы НБРБ к базовой валюте обновляются автоматически; любое значение можно переписать вручную.
+            </p>
           </section>
 
           {mode === 'cloud' && (

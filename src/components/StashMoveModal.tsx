@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { formatMoney, todayISO } from '../lib/format'
 import { stashBalance } from '../lib/stats'
@@ -11,15 +11,40 @@ interface Props {
 }
 
 export function StashMoveModal({ stash, initialType, onClose }: Props) {
-  const { stashMoves, addStashMove, settings } = useApp()
+  const { stashMoves, addStashMove, settings, rateFor } = useApp()
   const [type, setType] = useState<'in' | 'out'>(initialType)
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const [currency, setCurrency] = useState(settings.currency)
+  const [rateStr, setRateStr] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const balance = stashBalance(stashMoves, stash.id)
   const title = stash.kind === 'safe' ? 'Сейф' : stash.name ?? 'Копилка'
+  const entered = Number(amount.replace(',', '.'))
+  const isForeign = currency !== settings.currency
+  const currencyOptions = [settings.currency, ...settings.currencies]
+
+  useEffect(() => {
+    if (currency === settings.currency) {
+      setRateStr('')
+      return
+    }
+    const auto = rateFor(currency)
+    setRateStr(auto !== null ? String(auto).replace('.', ',') : '')
+  }, [currency, settings.currency, rateFor])
+
+  const parsedRate = (): number => {
+    if (!isForeign) return 1
+    const r = Number(rateStr.replace(',', '.'))
+    return Number.isFinite(r) && r > 0 ? r : NaN
+  }
+
+  const fxHint = (code: string): string => {
+    const r = rateFor(code)
+    return r !== null ? String(r).replace('.', ',') : 'курс'
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -28,7 +53,13 @@ export function StashMoveModal({ stash, initialType, onClose }: Props) {
       setError('Введи сумму больше нуля')
       return
     }
-    if (type === 'out' && value > balance) {
+    const rate = parsedRate()
+    if (isForeign && !Number.isFinite(rate)) {
+      setError('Укажи курс больше нуля')
+      return
+    }
+    const baseValue = Math.round(value * (Number.isFinite(rate) ? rate : 1) * 100) / 100
+    if (type === 'out' && baseValue > balance) {
       setError(`Недостаточно средств: доступно ${formatMoney(balance, settings.currency)}`)
       return
     }
@@ -38,10 +69,13 @@ export function StashMoveModal({ stash, initialType, onClose }: Props) {
       await addStashMove({
         stash_id: stash.id,
         type,
-        amount: Math.round(value * 100) / 100,
+        amount: baseValue,
         note: note.trim() || null,
         date: todayISO(),
-        operation_id: null
+        operation_id: null,
+        currency,
+        amount_orig: Math.round(value * 100) / 100,
+        rate: Number.isFinite(rate) ? rate : 1
       })
       onClose()
     } catch (err) {
@@ -71,6 +105,19 @@ export function StashMoveModal({ stash, initialType, onClose }: Props) {
             </button>
           </div>
 
+          {currencyOptions.length > 1 && (
+            <>
+              <label className="field-label">Валюта</label>
+              <select className="input" value={currency} onChange={e => setCurrency(e.target.value)}>
+                {currencyOptions.map(c => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+
           <div className="amount-field">
             <input
               className="amount-input"
@@ -81,6 +128,24 @@ export function StashMoveModal({ stash, initialType, onClose }: Props) {
               autoFocus
             />
           </div>
+
+          {isForeign && (
+            <div className="rate-block">
+              <label className="field-label">Курс, {settings.currency} за 1 {currency}</label>
+              <input
+                className="input"
+                inputMode="decimal"
+                placeholder={fxHint(currency)}
+                value={rateStr}
+                onChange={e => setRateStr(e.target.value.replace(/[^\d.,]/g, '').slice(0, 15))}
+              />
+              {entered > 0 && Number.isFinite(parsedRate()) && (
+                <p className="muted small rate-preview">
+                  ≈ {formatMoney(Math.round(entered * parsedRate() * 100) / 100, settings.currency)}
+                </p>
+              )}
+            </div>
+          )}
 
           <label className="field-label">Заметка</label>
           <input

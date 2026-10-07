@@ -1,9 +1,10 @@
 ﻿import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react'
-import { api, cloudEnabled } from '../lib/api'
+import { api, cloudEnabled, fetchFxRates, readFxCache } from '../lib/api'
 import { localStore } from '../lib/localStore'
 import {
   Category,
   CategoryInput,
+  ManualRate,
   Operation,
   OperationInput,
   Settings,
@@ -40,6 +41,12 @@ interface AppContextValue {
   offline: boolean
   settings: Settings
   setCurrency: (currency: string) => void
+  fx: Record<string, number>
+  manualRates: ManualRate[]
+  rateFor: (code: string) => number | null
+  addCurrency: (code: string) => void
+  removeCurrency: (code: string) => void
+  overrideRate: (code: string, rate: number | null) => Promise<void>
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
@@ -84,12 +91,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(() => {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY)
-      if (raw) return { currency: 'RUB', ...(JSON.parse(raw) as Partial<Settings>) }
+      if (raw) return { currency: 'RUB', currencies: [], ...(JSON.parse(raw) as Partial<Settings>) }
     } catch {
-      return { currency: 'RUB' }
+      return { currency: 'RUB', currencies: [] }
     }
-    return { currency: 'RUB' }
+    return { currency: 'RUB', currencies: [] }
   })
+  const [fx, setFx] = useState<Record<string, number>>(() => readFxCache()?.rates ?? {})
+  const [manualRates, setManualRates] = useState<ManualRate[]>([])
 
   useEffect(() => {
     const unsub = api.onAuthChange((id, em) => {
@@ -129,17 +138,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       await api.ensureDefaultCategories()
       await api.ensureSafe()
-      const [ops, cats, sts, mvs] = await Promise.all([
+      const [ops, cats, sts, mvs, rates] = await Promise.all([
         api.listOperations(),
         api.listCategories(),
         api.listStashes(),
-        api.listStashMoves()
+        api.listStashMoves(),
+        api.listRates()
       ])
       setOperations(ops)
       setCategories(cats)
       setStashes(sts)
       setStashMoves(mvs)
+      setManualRates(rates)
       setOffline(false)
+      try {
+        const fresh = await fetchFxRates()
+        setFx(fresh.rates)
+      } catch {
+        setFx(readFxCache()?.rates ?? {})
+      }
     } catch {
       try {
         const raw = localStorage.getItem(cacheKey(userId))
@@ -299,21 +316,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .reduce((s, m) => s + (m.type === 'in' ? m.amount : -m.amount), 0)
     const date = todayISO()
     if (bal > 0) {
+      const balRounded = Math.round(bal * 100) / 100
       await addStashMove({
         stash_id: id,
         type: 'out',
-        amount: Math.round(bal * 100) / 100,
+        amount: balRounded,
         note: reason === 'return' ? 'Возврат в баланс' : 'Копилка разбита',
         date,
-        operation_id: null
+        operation_id: null,
+        currency: settings.currency,
+        amount_orig: balRounded,
+        rate: 1
       })
       if (reason === 'spent') {
         await addOperation({
           type: 'expense',
-          amount: Math.round(bal * 100) / 100,
+          amount: balRounded,
           category_id: null,
           note: `💥 Копилка: ${piggy.name ?? ''}`.trim(),
-          date
+          date,
+          currency: settings.currency,
+          amount_orig: balRounded,
+          rate: 1
         })
       }
     }
@@ -326,6 +350,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setCurrency = (currency: string): void => {
     setSettings(prev => ({ ...prev, currency }))
+  }
+
+  const rateFor = (code: string): number | null => {
+    if (code === settings.currency) return 1
+    const manual = manualRates.find(r => r.code === code)
+    if (manual) return manual.rate
+    return fx[code] ?? null
+  }
+
+  const addCurrency = (code: string): void => {
+    const upper = code.trim().toUpperCase()
+    if (!upper || upper === settings.currency) return
+    setSettings(prev =>
+      prev.currencies.includes(upper) ? prev : { ...prev, currencies: [...prev.currencies, upper] }
+    )
+  }
+
+  const removeCurrency = (code: string): void => {
+    setSettings(prev => ({ ...prev, currencies: prev.currencies.filter(c => c !== code) }))
+  }
+
+  const overrideRate = async (code: string, rate: number | null): Promise<void> => {
+    await api.upsertRate(code, rate)
+    setManualRates(prev =>
+      rate === null ? prev.filter(r => r.code !== code) : [...prev.filter(r => r.code !== code), { id: code, code, rate }]
+    )
   }
 
   const resetLocalData = (): void => {
@@ -369,6 +419,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     offline,
     settings,
     setCurrency,
+    fx,
+    manualRates,
+    rateFor,
+    addCurrency,
+    removeCurrency,
+    overrideRate,
     signIn,
     signUp,
     signOut,

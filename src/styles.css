@@ -310,6 +310,65 @@ h3 {
   margin: 12px 0 0;
 }
 
+.op-amount-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.op-sub {
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.rate-preview {
+  margin: 6px 0 0;
+}
+
+.rate-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.rate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rate-code {
+  width: 44px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.rate-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rate-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rate-add .btn {
+  flex-shrink: 0;
+  padding: 10px 16px;
+}
+
+.cur-select {
+  width: auto;
+  flex-shrink: 0;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 .closed-row {
   display: flex;
   align-items: center;

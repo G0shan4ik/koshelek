@@ -1,7 +1,17 @@
 import { supabase } from './supabase'
 import { localStore } from './localStore'
 import { defaultCategories } from './defaults'
-import { Category, CategoryInput, Operation, OperationInput, Stash, StashInput, StashMove, StashMoveInput } from './types'
+import {
+  Category,
+  CategoryInput,
+  ManualRate,
+  Operation,
+  OperationInput,
+  Stash,
+  StashInput,
+  StashMove,
+  StashMoveInput
+} from './types'
 
 export const cloudEnabled = supabase !== null
 
@@ -24,6 +34,9 @@ interface OpRow {
   date: string
   created_at: string
   categories: Category | Category[] | null
+  currency?: string | null
+  amount_orig?: number | null
+  rate?: number | null
 }
 
 function normalizeStash(row: Partial<Stash> & { id: string }): Stash {
@@ -38,15 +51,31 @@ function normalizeStash(row: Partial<Stash> & { id: string }): Stash {
 
 function normalizeOp(row: OpRow): Operation {
   const cat = Array.isArray(row.categories) ? row.categories[0] ?? null : row.categories
+  const amount = Number(row.amount)
   return {
     id: row.id,
     type: row.type,
-    amount: Number(row.amount),
+    amount,
     category_id: row.category_id,
     note: row.note,
     date: row.date,
     created_at: row.created_at,
-    category: cat ?? null
+    category: cat ?? null,
+    currency: row.currency ?? 'BYN',
+    amount_orig: row.amount_orig != null ? Number(row.amount_orig) : amount,
+    rate: row.rate != null ? Number(row.rate) : 1
+  }
+}
+
+function normalizeMove(row: Partial<StashMove> & { id: string }): StashMove {
+  const base = row as StashMove
+  const amount = Number(base.amount)
+  return {
+    ...base,
+    operation_id: base.operation_id ?? null,
+    currency: base.currency ?? 'BYN',
+    amount_orig: base.amount_orig != null ? Number(base.amount_orig) : amount,
+    rate: base.rate != null ? Number(base.rate) : 1
   }
 }
 
@@ -286,7 +315,7 @@ export const api = {
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
     if (error) throw error
-    return ((data ?? []) as StashMove[]).map(m => ({ ...m, operation_id: m.operation_id ?? null }))
+    return ((data ?? []) as StashMove[]).map(normalizeMove)
   },
 
   async addStashMove(input: StashMoveInput): Promise<StashMove> {
@@ -298,10 +327,75 @@ export const api = {
       .select()
       .single()
     if (error) throw error
-    return data as StashMove
+    return normalizeMove(data as StashMove)
+  },
+
+  async listRates(): Promise<ManualRate[]> {
+    if (!supabase) return localStore.listRates()
+    const { data, error } = await supabase.from('rates').select('id, code, rate')
+    if (error) throw error
+    return (data ?? []) as ManualRate[]
+  },
+
+  async upsertRate(code: string, rate: number | null): Promise<void> {
+    if (!supabase) {
+      localStore.upsertRate(code, rate)
+      return
+    }
+    if (rate === null) {
+      const { error } = await supabase.from('rates').delete().eq('code', code)
+      if (error) throw error
+      return
+    }
+    const { data: user } = await supabase.auth.getUser()
+    const { error } = await supabase
+      .from('rates')
+      .upsert({ user_id: user.user!.id, code, rate }, { onConflict: 'user_id,code' })
+    if (error) throw error
   },
 
   resetLocalData(): void {
     localStore.resetAll()
   }
+}
+
+const FX_KEY = 'koshelok:fx'
+const FX_TTL = 12 * 60 * 60 * 1000
+
+export interface FxCache {
+  ts: number
+  rates: Record<string, number>
+}
+
+export function readFxCache(): FxCache | null {
+  try {
+    const raw = localStorage.getItem(FX_KEY)
+    return raw ? (JSON.parse(raw) as FxCache) : null
+  } catch {
+    return null
+  }
+}
+
+export async function fetchFxRates(): Promise<FxCache> {
+  const cached = readFxCache()
+  if (cached && Date.now() - cached.ts < FX_TTL) return cached
+  const res = await fetch('https://api.nbrb.by/exrates/rates?periodicity=0')
+  if (!res.ok) throw new Error('НБРБ недоступен')
+  const arr = (await res.json()) as Array<{
+    Cur_Abbreviation: string
+    Cur_OfficialRate: number
+    Cur_Scale?: number
+  }>
+  const rates: Record<string, number> = {}
+  for (const r of arr) {
+    const scale = r.Cur_Scale && r.Cur_Scale > 0 ? r.Cur_Scale : 1
+    rates[r.Cur_Abbreviation] = Number(r.Cur_OfficialRate) / scale
+  }
+  const cache: FxCache = { ts: Date.now(), rates }
+  try {
+    localStorage.setItem(FX_KEY, JSON.stringify(cache))
+  } catch {
+    return cache
+  }
+  return cache
 }

@@ -1,4 +1,4 @@
-import { chromium } from 'playwright'
+﻿import { chromium } from 'playwright'
 import { spawn, execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -127,12 +127,19 @@ try {
   await side2.nth(0).fill('30')
   await side2.nth(1).fill('40')
   await page.click('.modal-sheet button[type="submit"]')
+  if (await page.locator('.modal-sheet .error').count()) {
+  }
   await page.waitForSelector('.modal-sheet', { state: 'detached' })
+  await page.click('.nav-item:has-text("История")')
+  if (await page.locator('.op-row').count()) {
+  }
 
   await page.click('.nav-item:has-text("Копилка")')
   await page.locator('.piggy-card', { hasText: 'Отпуск' }).getByRole('button', { name: 'Пополнить' }).click()
   await page.fill('.amount-input', '60')
   await page.click('.modal-sheet button[type="submit"]')
+  if (await page.locator('.modal-sheet .error').count()) {
+  }
   await page.waitForSelector('.modal-sheet', { state: 'detached' })
   const piggyText = norm(await page.locator('.piggy-card', { hasText: 'Отпуск' }).textContent())
   check('копилка_100_из_100_и_100_процентов', piggyText.includes('100 ₽ из 100 ₽') && piggyText.includes('100%'))
@@ -158,6 +165,29 @@ try {
   await page.waitForSelector('.modal-sheet', { state: 'detached' })
   check('сейф_20_после_снятия', norm(await page.textContent('.balance-value')).includes('20'))
 
+  await page.click('.segmented button:has-text("Профиль")')
+  await page.fill('input[placeholder="Добавить валюту (USD, EUR…)"]', 'USD')
+  await page.click('.rate-add .btn')
+  await page.click('.nav-item:has-text("Обзор")')
+  await page.click('.fab')
+  await page.click('.type-toggle button:has-text("Доход")')
+  await page.selectOption('.modal-sheet select.input', 'USD')
+  const rateInput = page.locator('.rate-block input')
+  await rateInput.waitFor()
+  let rateVal = ''
+  for (let i = 0; i < 20 && !rateVal; i++) {
+    rateVal = await rateInput.inputValue()
+    if (!rateVal) await new Promise(r => setTimeout(r, 500))
+  }
+  check('автокурс_нбрб_подставился', rateVal !== '')
+  await page.fill('.amount-input', '10')
+  await page.waitForSelector('.rate-preview')
+  await page.click('.modal-sheet button[type="submit"]')
+  await page.waitForSelector('.modal-sheet', { state: 'detached' })
+  await page.click('.nav-item:has-text("История")')
+  const usdRow = norm(await page.locator('.op-row').first().textContent())
+  check('строка_usd_с_эквивалентом_в_истории', usdRow.includes('$') && usdRow.includes('≈'))
+
   await page.click('.nav-item:has-text("Обзор")')
   await page.click('.fab')
   await page.fill('.amount-input', '50')
@@ -172,6 +202,7 @@ try {
     'отчеты_год_месяцы_и_годы',
     reportsText.includes('Динамика по месяцам') && reportsText.includes('Динамика по годам')
   )
+  check('отчет_по_валютам', reportsText.includes('По валютам'))
 
   check('нет_ошибок_в_консоли', pageErrors.length === 0)
   if (pageErrors.length > 0) results.push('pageerrors: ' + pageErrors.join(' | '))

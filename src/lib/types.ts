@@ -19,12 +19,16 @@ export interface Operation {
   date: string
   created_at: string
   category: Category | null
+  currency: string
+  amount_orig: number
+  rate: number
 }
 
 export type OperationInput = Omit<Operation, 'id' | 'created_at' | 'category'>
 
 export interface Settings {
   currency: string
+  currencies: string[]
 }
 
 export interface Stash {
@@ -51,6 +55,15 @@ export interface StashMove {
   date: string
   created_at: string
   operation_id: string | null
+  currency: string
+  amount_orig: number
+  rate: number
+}
+
+export interface ManualRate {
+  id: string
+  code: string
+  rate: number
 }
 
 export type StashMoveInput = Omit<StashMove, 'id' | 'created_at'>
