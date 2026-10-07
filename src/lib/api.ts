@@ -26,6 +26,16 @@ interface OpRow {
   categories: Category | Category[] | null
 }
 
+function normalizeStash(row: Partial<Stash> & { id: string }): Stash {
+  const base = row as Stash
+  return {
+    ...base,
+    status: base.status ?? 'open',
+    closed_reason: base.closed_reason ?? null,
+    closed_at: base.closed_at ?? null
+  }
+}
+
 function normalizeOp(row: OpRow): Operation {
   const cat = Array.isArray(row.categories) ? row.categories[0] ?? null : row.categories
   return {
@@ -181,10 +191,10 @@ export const api = {
   },
 
   async listStashes(): Promise<Stash[]> {
-    if (!supabase) return localStore.ensureSafe()
+    if (!supabase) return localStore.ensureSafe().map(normalizeStash)
     const { data, error } = await supabase.from('stashes').select('*').order('created_at')
     if (error) throw error
-    return (data ?? []) as Stash[]
+    return ((data ?? []) as Stash[]).map(normalizeStash)
   },
 
   async ensureSafe(): Promise<void> {

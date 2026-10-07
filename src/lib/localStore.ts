@@ -82,7 +82,10 @@ export const localStore = {
       goal: null,
       icon: '🔐',
       color: '#ffd60a',
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      status: 'open',
+      closed_reason: null,
+      closed_at: null
     }
     const next = [safe, ...list]
     write(STASH_KEY, next)

@@ -7,14 +7,21 @@ import { PiggyModal } from './PiggyModal'
 import { StashMoveModal } from './StashMoveModal'
 
 export function PiggiesTab() {
-  const { stashes, stashMoves, settings } = useApp()
+  const { stashes, stashMoves, settings, deleteStash } = useApp()
   const cur = settings.currency
-  const piggies = stashes.filter(s => s.kind === 'piggy')
+  const allPiggies = stashes.filter(s => s.kind === 'piggy')
+  const piggies = allPiggies.filter(s => (s.status ?? 'open') === 'open')
+  const closed = allPiggies.filter(s => s.status === 'closed')
   const [editing, setEditing] = useState<Stash | 'new' | null>(null)
   const [moving, setMoving] = useState<{ stash: Stash; type: 'in' | 'out' } | null>(null)
 
-  const piggyMoves = stashMoves.filter(m => piggies.some(p => p.id === m.stash_id))
+  const piggyMoves = stashMoves.filter(m => allPiggies.some(p => p.id === m.stash_id))
   const totalSaved = piggies.reduce((s, p) => s + stashBalance(stashMoves, p.id), 0)
+
+  const removeClosed = async (p: Stash) => {
+    if (!window.confirm(`Удалить закрытую копилку «${p.name}» вместе с историей движений?`)) return
+    await deleteStash(p.id)
+  }
 
   return (
     <div className="page">
@@ -89,7 +96,7 @@ export function PiggiesTab() {
               <h3>История движений</h3>
               <div className="op-list">
                 {piggyMoves.slice(0, 20).map(m => {
-                  const p = piggies.find(x => x.id === m.stash_id)
+                  const p = allPiggies.find(x => x.id === m.stash_id)
                   return (
                     <div className="move-row" key={m.id}>
                       <span className="move-date">{formatDateLong(m.date)}</span>
@@ -107,6 +114,29 @@ export function PiggiesTab() {
             </section>
           )}
         </>
+      )}
+
+      {closed.length > 0 && (
+        <section className="card">
+          <h3>Закрытые копилки</h3>
+          {closed.map(p => (
+            <div className="closed-row" key={p.id}>
+              <span className="op-icon" style={{ background: p.color + '26' }}>
+                {p.icon}
+              </span>
+              <div className="piggy-title">
+                <span className="piggy-name">{p.name}</span>
+                <span className="muted small">
+                  {p.closed_reason === 'spent' ? '💥 разбита' : '↩️ возвращено в баланс'}
+                  {p.closed_at ? ` · ${new Date(p.closed_at).toLocaleDateString('ru-RU')}` : ''}
+                </span>
+              </div>
+              <button className="icon-btn" onClick={() => removeClosed(p)} aria-label="Удалить навсегда">
+                ✕
+              </button>
+            </div>
+          ))}
+        </section>
       )}
 
       {editing && <PiggyModal piggy={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

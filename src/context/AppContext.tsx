@@ -13,6 +13,7 @@ import {
   StashMoveInput
 } from '../lib/types'
 import { sortByDateDesc } from '../lib/stats'
+import { todayISO } from '../lib/format'
 
 const SETTINGS_KEY = 'koshelok:settings'
 
@@ -52,6 +53,7 @@ interface AppContextValue {
   createStash: (input: StashInput) => Promise<void>
   updateStash: (id: string, input: Partial<StashInput>) => Promise<void>
   deleteStash: (id: string) => Promise<void>
+  closePiggy: (id: string, reason: 'return' | 'spent') => Promise<void>
   addStashMove: (input: StashMoveInput) => Promise<void>
   refresh: () => Promise<void>
   resetLocalData: () => void
@@ -253,6 +255,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setStashMoves(prev => sortByDateDesc([move, ...prev]))
   }
 
+  const closePiggy = async (id: string, reason: 'return' | 'spent'): Promise<void> => {
+    const piggy = stashes.find(s => s.id === id)
+    if (!piggy) return
+    const bal = stashMoves
+      .filter(m => m.stash_id === id)
+      .reduce((s, m) => s + (m.type === 'in' ? m.amount : -m.amount), 0)
+    const date = todayISO()
+    if (bal > 0) {
+      await addStashMove({
+        stash_id: id,
+        type: 'out',
+        amount: Math.round(bal * 100) / 100,
+        note: reason === 'return' ? 'Возврат в баланс' : 'Копилка разбита',
+        date
+      })
+      if (reason === 'spent') {
+        await addOperation({
+          type: 'expense',
+          amount: Math.round(bal * 100) / 100,
+          category_id: null,
+          note: `💥 Копилка: ${piggy.name ?? ''}`.trim(),
+          date
+        })
+      }
+    }
+    await updateStash(id, {
+      status: 'closed',
+      closed_reason: reason,
+      closed_at: new Date().toISOString()
+    })
+  }
+
   const setCurrency = (currency: string): void => {
     setSettings(prev => ({ ...prev, currency }))
   }
@@ -304,6 +338,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     createStash,
     updateStash,
     deleteStash,
+    closePiggy,
     addStashMove,
     refresh: loadData,
     resetLocalData,

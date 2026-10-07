@@ -1,10 +1,11 @@
 import { FormEvent, useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { CATEGORY_COLORS, CATEGORY_ICONS } from '../lib/defaults'
+import { formatMoney } from '../lib/format'
 import { Stash } from '../lib/types'
 
 export function PiggyModal({ piggy, onClose }: { piggy: Stash | null; onClose: () => void }) {
-  const { createStash, updateStash, deleteStash, stashMoves } = useApp()
+  const { createStash, updateStash, deleteStash, closePiggy, stashMoves, settings } = useApp()
   const [name, setName] = useState(piggy?.name ?? '')
   const [goal, setGoal] = useState(piggy?.goal ? String(piggy.goal).replace('.', ',') : '')
   const [icon, setIcon] = useState(piggy?.icon ?? '🐷')
@@ -28,7 +29,16 @@ export function PiggyModal({ piggy, onClose }: { piggy: Stash | null; onClose: (
     setBusy(true)
     setError(null)
     try {
-      const input = { kind: 'piggy' as const, name: name.trim(), goal: goalValue, icon: icon || '🐷', color }
+      const input = {
+        kind: 'piggy' as const,
+        name: name.trim(),
+        goal: goalValue,
+        icon: icon || '🐷',
+        color,
+        status: 'open' as const,
+        closed_reason: null,
+        closed_at: null
+      }
       if (piggy) await updateStash(piggy.id, input)
       else await createStash(input)
       onClose()
@@ -48,6 +58,27 @@ export function PiggyModal({ piggy, onClose }: { piggy: Stash | null; onClose: (
     setBusy(true)
     try {
       await deleteStash(piggy.id)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка')
+      setBusy(false)
+    }
+  }
+
+  const balance = piggy
+    ? stashMoves.filter(m => m.stash_id === piggy.id).reduce((s, m) => s + (m.type === 'in' ? m.amount : -m.amount), 0)
+    : 0
+
+  const close = async (reason: 'return' | 'spent') => {
+    if (!piggy) return
+    const msg =
+      reason === 'return'
+        ? `Вернуть ${formatMoney(balance, settings.currency)} в баланс и закрыть копилку «${piggy.name}»?`
+        : `Разбить копилку «${piggy.name}»? ${formatMoney(balance, settings.currency)} будут списаны как расход по назначению.`
+    if (!window.confirm(msg)) return
+    setBusy(true)
+    try {
+      await closePiggy(piggy.id, reason)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка')
@@ -99,6 +130,20 @@ export function PiggyModal({ piggy, onClose }: { piggy: Stash | null; onClose: (
               />
             ))}
           </div>
+
+          {piggy && (
+            <>
+              <label className="field-label">Закрыть копилку</label>
+              <div className="btn-col">
+                <button type="button" className="btn btn-secondary" onClick={() => close('return')} disabled={busy}>
+                  ↩️ Вернуть в баланс
+                </button>
+                <button type="button" className="btn btn-danger" onClick={() => close('spent')} disabled={busy}>
+                  💥 Разбить копилку
+                </button>
+              </div>
+            </>
+          )}
 
           {error && <div className="error">{error}</div>}
 

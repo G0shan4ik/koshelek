@@ -35,6 +35,9 @@ export interface Stash {
   icon: string
   color: string
   created_at: string
+  status: 'open' | 'closed'
+  closed_reason: 'return' | 'spent' | null
+  closed_at: string | null
 }
 
 export type StashInput = Omit<Stash, 'id' | 'created_at'>
