@@ -2,7 +2,6 @@ import { ChangeEvent, useRef, useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { CURRENCIES, formatDateLong, formatMoney, formatOrig } from '../lib/format'
 import { exportCsv, exportJson, importJson } from '../lib/files'
-import { stashBalance } from '../lib/stats'
 import { Category, Stash, StashMove } from '../lib/types'
 import { CategoryModal } from './CategoryModal'
 import { StashMoveModal } from './StashMoveModal'
@@ -28,7 +27,8 @@ export function SettingsTab() {
     manualRates,
     overrideRate,
     addCurrency,
-    removeCurrency
+    removeCurrency,
+    rateFor
   } = useApp()
   const [newCur, setNewCur] = useState('')
   const [section, setSection] = useState<Section>('profile')
@@ -44,8 +44,20 @@ export function SettingsTab() {
   const expenseCats = categories.filter(c => c.type === 'expense')
   const incomeCats = categories.filter(c => c.type === 'income')
   const safe = stashes.find(s => s.kind === 'safe')
-  const safeBal = safe ? stashBalance(stashMoves, safe.id) : 0
   const safeMoves = safe ? stashMoves.filter(m => m.stash_id === safe.id) : []
+  const safeHoldings = (() => {
+    const map = new Map<string, { orig: number; base: number }>()
+    for (const m of safeMoves) {
+      const e = map.get(m.currency) ?? { orig: 0, base: 0 }
+      e.orig += m.type === 'in' ? m.amount_orig : -m.amount_orig
+      e.base += m.type === 'in' ? m.amount : -m.amount
+      map.set(m.currency, e)
+    }
+    return [...map.entries()].filter(([, v]) => Math.abs(v.orig) > 0.004)
+  })()
+  const safeRateOf = (code: string, v: { orig: number; base: number }): number =>
+    rateFor(code) ?? (v.orig !== 0 ? v.base / v.orig : 1)
+  const safeTotal = safeHoldings.reduce((s, [code, v]) => s + v.orig * safeRateOf(code, v), 0)
 
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -282,7 +294,17 @@ export function SettingsTab() {
         <>
           <section className="card balance-card">
             <span className="balance-label">🔐 В сейфе</span>
-            <span className="balance-value">{formatMoney(safeBal, cur)}</span>
+            <span className="balance-value">{formatMoney(safeTotal, cur)}</span>
+            {safeHoldings.length > 0 && (
+              <div className="safe-holdings">
+                {safeHoldings.map(([code, v]) => (
+                  <div className="safe-holding" key={code}>
+                    <span>{formatOrig(v.orig, code)}</span>
+                    <span className="safe-holding-base">≈ {formatMoney(v.orig * safeRateOf(code, v), cur)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="piggy-actions">
               <button className="btn btn-secondary" onClick={() => safe && setMoving({ stash: safe, type: 'in' })}>
                 Пополнить

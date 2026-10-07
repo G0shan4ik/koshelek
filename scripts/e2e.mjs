@@ -54,11 +54,12 @@ async function launchBrowser() {
   return await chromium.launch({ headless: true })
 }
 
+const pageErrors = []
+
 try {
   await waitForServer()
   const browser = await launchBrowser()
   const page = await browser.newPage({ viewport: { width: 400, height: 850 } })
-  const pageErrors = []
   page.on('pageerror', e => pageErrors.push(e.message))
   page.on('dialog', d => d.accept())
 
@@ -188,6 +189,16 @@ try {
   const usdRow = norm(await page.locator('.op-row').first().textContent())
   check('строка_usd_с_эквивалентом_в_истории', usdRow.includes('$') && usdRow.includes('≈'))
 
+  await page.click('.nav-item:has-text("Настройки")')
+  await page.click('.segmented button:has-text("Сейф")')
+  await page.click('.piggy-actions button:has-text("Пополнить")')
+  await page.selectOption('.modal-sheet select.input', 'USD')
+  await page.fill('.amount-input', '10')
+  await page.click('.modal-sheet button[type="submit"]')
+  await page.waitForSelector('.modal-sheet', { state: 'detached' })
+  const holdings = norm(await page.textContent('.safe-holdings'))
+  check('сейф_мультивалютные_остатки', holdings.includes('$') && holdings.includes('₽'))
+
   await page.click('.nav-item:has-text("Обзор")')
   await page.click('.fab')
   await page.fill('.amount-input', '50')
@@ -211,6 +222,7 @@ try {
 } catch (e) {
   failed++
   results.push('CRASH  ' + e.message)
+  if (pageErrors.length > 0) console.log('PAGE ERRORS:\n' + pageErrors.join('\n'))
 } finally {
   stopServer()
   if (envMoved && fs.existsSync(bakPath)) fs.renameSync(bakPath, envPath)

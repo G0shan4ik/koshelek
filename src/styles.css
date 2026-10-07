@@ -311,6 +311,26 @@ h3 {
   margin: 12px 0 0;
 }
 
+.safe-holdings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.safe-holding {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.safe-holding-base {
+  opacity: 0.8;
+  font-weight: 500;
+}
+
 .op-amount-col {
   display: flex;
   flex-direction: column;

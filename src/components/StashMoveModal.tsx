@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { formatMoney, todayISO } from '../lib/format'
+import { formatMoney, formatOrig, todayISO } from '../lib/format'
 import { stashBalance } from '../lib/stats'
 import { Stash } from '../lib/types'
 
@@ -24,6 +24,12 @@ export function StashMoveModal({ stash, initialType, onClose }: Props) {
   const title = stash.kind === 'safe' ? 'Сейф' : stash.name ?? 'Копилка'
   const entered = Number(amount.replace(',', '.'))
   const isForeign = currency !== settings.currency
+  const heldOrig =
+    stash.kind === 'safe'
+      ? stashMoves
+          .filter(m => m.stash_id === stash.id && m.currency === currency)
+          .reduce((s, m) => s + (m.type === 'in' ? m.amount_orig : -m.amount_orig), 0)
+      : null
   const currencyOptions = [settings.currency, ...settings.currencies]
 
   useEffect(() => {
@@ -59,7 +65,11 @@ export function StashMoveModal({ stash, initialType, onClose }: Props) {
       return
     }
     const baseValue = Math.round(value * (Number.isFinite(rate) ? rate : 1) * 100) / 100
-    if (type === 'out' && baseValue > balance) {
+    if (type === 'out' && heldOrig !== null && value > heldOrig + 0.004) {
+      setError(`В сейфе этой валютой только ${formatOrig(Math.max(heldOrig, 0), currency)}`)
+      return
+    }
+    if (type === 'out' && heldOrig === null && baseValue > balance) {
       setError(`Недостаточно средств: доступно ${formatMoney(balance, settings.currency)}`)
       return
     }
@@ -156,7 +166,11 @@ export function StashMoveModal({ stash, initialType, onClose }: Props) {
             maxLength={200}
           />
 
-          <p className="muted small stash-hint">Сейчас в сейфе/копилке: {formatMoney(balance, settings.currency)}</p>
+          <p className="muted small stash-hint">
+            {heldOrig !== null
+              ? `Сейчас в сейфе этой валютой: ${formatOrig(heldOrig, currency)}`
+              : `Сейчас в копилке: ${formatMoney(balance, settings.currency)}`}
+          </p>
 
           {error && <div className="error">{error}</div>}
 
