@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { localStore } from './localStore'
 import { defaultCategories } from './defaults'
-import { Category, CategoryInput, Operation, OperationInput } from './types'
+import { Category, CategoryInput, Operation, OperationInput, Stash, StashInput, StashMove, StashMoveInput } from './types'
 
 export const cloudEnabled = supabase !== null
 
@@ -166,6 +166,94 @@ export const api = {
     }
     const { error } = await supabase.from('operations').delete().eq('id', id)
     if (error) throw error
+  },
+
+  async getProfile(): Promise<{ email: string | null; createdAt: string | null }> {
+    if (!supabase) return { email: null, createdAt: null }
+    const { data } = await supabase.auth.getUser()
+    return { email: data.user?.email ?? null, createdAt: data.user?.created_at ?? null }
+  },
+
+  async changePassword(password: string): Promise<void> {
+    if (!supabase) throw new Error('Доступно только в облачном режиме')
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw new Error(translateError(error.message))
+  },
+
+  async listStashes(): Promise<Stash[]> {
+    if (!supabase) return localStore.ensureSafe()
+    const { data, error } = await supabase.from('stashes').select('*').order('created_at')
+    if (error) throw error
+    return (data ?? []) as Stash[]
+  },
+
+  async ensureSafe(): Promise<void> {
+    if (!supabase) {
+      localStore.ensureSafe()
+      return
+    }
+    const { count } = await supabase
+      .from('stashes')
+      .select('id', { count: 'exact', head: true })
+      .eq('kind', 'safe')
+    if (count && count > 0) return
+    const { data } = await supabase.auth.getUser()
+    const userId = data.user?.id
+    if (!userId) return
+    await supabase.from('stashes').insert({ user_id: userId, kind: 'safe', icon: '🔐', color: '#ffd60a' })
+  },
+
+  async createStash(input: StashInput): Promise<Stash> {
+    if (!supabase) return localStore.createStash(input)
+    const { data: user } = await supabase.auth.getUser()
+    const { data, error } = await supabase
+      .from('stashes')
+      .insert({ ...input, user_id: user.user!.id })
+      .select()
+      .single()
+    if (error) throw error
+    return data as Stash
+  },
+
+  async updateStash(id: string, input: Partial<StashInput>): Promise<void> {
+    if (!supabase) {
+      localStore.updateStash(id, input)
+      return
+    }
+    const { error } = await supabase.from('stashes').update(input).eq('id', id)
+    if (error) throw error
+  },
+
+  async deleteStash(id: string): Promise<void> {
+    if (!supabase) {
+      localStore.deleteStash(id)
+      return
+    }
+    const { error } = await supabase.from('stashes').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  async listStashMoves(): Promise<StashMove[]> {
+    if (!supabase) return localStore.listStashMoves()
+    const { data, error } = await supabase
+      .from('stash_moves')
+      .select('*')
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    return (data ?? []) as StashMove[]
+  },
+
+  async addStashMove(input: StashMoveInput): Promise<StashMove> {
+    if (!supabase) return localStore.addStashMove(input)
+    const { data: user } = await supabase.auth.getUser()
+    const { data, error } = await supabase
+      .from('stash_moves')
+      .insert({ ...input, user_id: user.user!.id })
+      .select()
+      .single()
+    if (error) throw error
+    return data as StashMove
   },
 
   resetLocalData(): void {

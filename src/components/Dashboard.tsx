@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { formatMoney, monthTitle } from '../lib/format'
-import { groupByCategory, sumByType } from '../lib/stats'
+import { groupByCategory, movesNet, sumByType } from '../lib/stats'
 import { Operation } from '../lib/types'
 import { CategoryLegend, DonutChart } from './DonutChart'
 import { PeriodPicker } from './PeriodPicker'
@@ -24,7 +24,7 @@ function greeting(): string {
 }
 
 export function Dashboard({ onAdd, onEdit, onNavigate }: Props) {
-  const { operations, settings } = useApp()
+  const { operations, settings, stashMoves } = useApp()
   const [period, setPeriod] = useState<Period>(currentPeriod('month'))
   const month = period.value
   const cur = settings.currency
@@ -32,6 +32,10 @@ export function Dashboard({ onAdd, onEdit, onNavigate }: Props) {
   const monthOps = useMemo(() => operations.filter(o => o.date.startsWith(month)), [operations, month])
   const income = sumByType(monthOps, 'income')
   const expense = sumByType(monthOps, 'expense')
+  const monthStashNet = useMemo(
+    () => movesNet(stashMoves.filter(m => m.date.startsWith(month))),
+    [stashMoves, month]
+  )
   const expenseByCat = useMemo(
     () => groupByCategory(monthOps.filter(o => o.type === 'expense')),
     [monthOps]
@@ -50,7 +54,7 @@ export function Dashboard({ onAdd, onEdit, onNavigate }: Props) {
 
       <section className="card balance-card">
         <span className="balance-label">Баланс за {monthTitle(month).toLowerCase()}</span>
-        <span className="balance-value">{formatMoney(income - expense, cur)}</span>
+        <span className="balance-value">{formatMoney(income - expense - monthStashNet, cur)}</span>
       </section>
 
       <PeriodPicker period={period} onChange={p => setPeriod(p ?? currentPeriod('month'))} showKind={false} />

@@ -1,9 +1,11 @@
-import { Category, CategoryInput, Operation, OperationInput } from './types'
+import { Category, CategoryInput, Operation, OperationInput, Stash, StashInput, StashMove, StashMoveInput } from './types'
 import { defaultCategories, uid } from './defaults'
 import { sortByDateDesc } from './stats'
 
 const OPS_KEY = 'koshelok:operations'
 const CATS_KEY = 'koshelok:categories'
+const STASH_KEY = 'koshelok:stashes'
+const MOVE_KEY = 'koshelok:stash-moves'
 
 function read<T>(key: string): T | null {
   try {
@@ -67,8 +69,57 @@ export const localStore = {
   deleteOperation(id: string): void {
     write(OPS_KEY, operations().filter(o => o.id !== id))
   },
+  listStashes(): Stash[] {
+    return stashes()
+  },
+  ensureSafe(): Stash[] {
+    const list = stashes()
+    if (list.some(s => s.kind === 'safe')) return list
+    const safe: Stash = {
+      id: uid(),
+      kind: 'safe',
+      name: null,
+      goal: null,
+      icon: '🔐',
+      color: '#ffd60a',
+      created_at: new Date().toISOString()
+    }
+    const next = [safe, ...list]
+    write(STASH_KEY, next)
+    return next
+  },
+  createStash(input: StashInput): Stash {
+    const stash: Stash = { ...input, id: uid(), created_at: new Date().toISOString() }
+    write(STASH_KEY, [...stashes(), stash])
+    return stash
+  },
+  updateStash(id: string, input: Partial<StashInput>): void {
+    write(STASH_KEY, stashes().map(s => (s.id === id ? { ...s, ...input } : s)))
+  },
+  deleteStash(id: string): void {
+    write(STASH_KEY, stashes().filter(s => s.id !== id))
+    write(MOVE_KEY, moves().filter(m => m.stash_id !== id))
+  },
+  listStashMoves(): StashMove[] {
+    return sortByDateDesc(moves())
+  },
+  addStashMove(input: StashMoveInput): StashMove {
+    const move: StashMove = { ...input, id: uid(), created_at: new Date().toISOString() }
+    write(MOVE_KEY, [...moves(), move])
+    return move
+  },
   resetAll(): void {
     localStorage.removeItem(OPS_KEY)
     localStorage.removeItem(CATS_KEY)
+    localStorage.removeItem(STASH_KEY)
+    localStorage.removeItem(MOVE_KEY)
   }
+}
+
+function stashes(): Stash[] {
+  return read<Stash[]>(STASH_KEY) ?? []
+}
+
+function moves(): StashMove[] {
+  return read<StashMove[]>(MOVE_KEY) ?? []
 }

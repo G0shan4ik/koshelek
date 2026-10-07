@@ -1,4 +1,4 @@
-import { Operation } from './types'
+import { Operation, StashMove } from './types'
 import { shiftMonth } from './format'
 
 export function sumByType(ops: Operation[], type: 'income' | 'expense'): number {
@@ -47,7 +47,15 @@ export function lastMonths(month: string, count: number): string[] {
   return res
 }
 
-export function sortByDateDesc(list: Operation[]): Operation[] {
+export function stashBalance(moves: StashMove[], stashId: string): number {
+  return moves.reduce((s, m) => (m.stash_id === stashId ? s + (m.type === 'in' ? m.amount : -m.amount) : s), 0)
+}
+
+export function movesNet(moves: StashMove[]): number {
+  return moves.reduce((s, m) => s + (m.type === 'in' ? m.amount : -m.amount), 0)
+}
+
+export function sortByDateDesc<T extends { date: string; created_at: string }>(list: T[]): T[] {
   return [...list].sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1
     return a.created_at < b.created_at ? 1 : -1

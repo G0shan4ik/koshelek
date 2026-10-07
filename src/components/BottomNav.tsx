@@ -1,10 +1,11 @@
-export type Tab = 'dashboard' | 'history' | 'stats' | 'settings'
+export type Tab = 'dashboard' | 'history' | 'stats' | 'piggies' | 'settings'
 
 const ITEMS: Array<{ id: Tab; icon: string; label: string }> = [
   { id: 'dashboard', icon: '🏠', label: 'Обзор' },
   { id: 'history', icon: '📋', label: 'История' },
   { id: 'stats', icon: '📈', label: 'Отчёты' },
-  { id: 'settings', icon: '⚙️', label: 'Ещё' }
+  { id: 'piggies', icon: '🐷', label: 'Копилка' },
+  { id: 'settings', icon: '⚙️', label: 'Настройки' }
 ]
 
 export function BottomNav({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {

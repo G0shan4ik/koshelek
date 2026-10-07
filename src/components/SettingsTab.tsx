@@ -1,11 +1,13 @@
 import { ChangeEvent, useRef, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { CURRENCIES } from '../lib/format'
+import { CURRENCIES, formatDateLong, formatMoney } from '../lib/format'
 import { exportCsv, exportJson, importJson } from '../lib/files'
-import { Category } from '../lib/types'
+import { stashBalance } from '../lib/stats'
+import { Category, Stash } from '../lib/types'
 import { CategoryModal } from './CategoryModal'
+import { StashMoveModal } from './StashMoveModal'
 
-type Section = 'categories' | 'data' | 'profile'
+type Section = 'profile' | 'categories' | 'safe' | 'data'
 
 export function SettingsTab() {
   const {
@@ -15,16 +17,29 @@ export function SettingsTab() {
     setCurrency,
     mode,
     email,
+    profile,
     signOut,
+    changePassword,
     resetLocalData,
-    importLocalData
+    importLocalData,
+    stashes,
+    stashMoves
   } = useApp()
-  const [section, setSection] = useState<Section>('categories')
+  const [section, setSection] = useState<Section>('profile')
   const [editingCat, setEditingCat] = useState<Category | 'new' | null>(null)
+  const [moving, setMoving] = useState<{ stash: Stash; type: 'in' | 'out' } | null>(null)
+  const [newPass, setNewPass] = useState('')
+  const [passMsg, setPassMsg] = useState<string | null>(null)
+  const [passErr, setPassErr] = useState<string | null>(null)
+  const [passBusy, setPassBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const cur = settings.currency
 
   const expenseCats = categories.filter(c => c.type === 'expense')
   const incomeCats = categories.filter(c => c.type === 'income')
+  const safe = stashes.find(s => s.kind === 'safe')
+  const safeBal = safe ? stashBalance(stashMoves, safe.id) : 0
+  const safeMoves = safe ? stashMoves.filter(m => m.stash_id === safe.id) : []
 
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -40,6 +55,25 @@ export function SettingsTab() {
     }
   }
 
+  const submitPass = async () => {
+    setPassErr(null)
+    setPassMsg(null)
+    if (newPass.length < 6) {
+      setPassErr('Пароль должен быть не короче 6 символов')
+      return
+    }
+    setPassBusy(true)
+    try {
+      await changePassword(newPass)
+      setPassMsg('Пароль обновлён')
+      setNewPass('')
+    } catch (err) {
+      setPassErr(err instanceof Error ? err.message : 'Не удалось сменить пароль')
+    } finally {
+      setPassBusy(false)
+    }
+  }
+
   const usageCount = (id: string) => operations.filter(o => o.category_id === id).length
 
   const catRow = (c: Category) => (
@@ -52,23 +86,105 @@ export function SettingsTab() {
     </button>
   )
 
+  const moveRow = (mId: string, date: string, note: string | null, type: 'in' | 'out', amount: number) => (
+    <div className="move-row" key={mId}>
+      <span className="move-date">{formatDateLong(date)}</span>
+      <span className="move-note">{note ?? (type === 'in' ? 'Пополнение' : 'Снятие')}</span>
+      <span className={type === 'in' ? 'green' : 'red'}>
+        {type === 'in' ? '+' : '−'}
+        {formatMoney(amount, cur)}
+      </span>
+    </div>
+  )
+
   return (
     <div className="page">
       <header className="page-head">
-        <h1>Ещё</h1>
+        <h1>Настройки</h1>
       </header>
 
       <div className="segmented">
+        <button className={section === 'profile' ? 'active' : ''} onClick={() => setSection('profile')}>
+          Профиль
+        </button>
         <button className={section === 'categories' ? 'active' : ''} onClick={() => setSection('categories')}>
           Категории
+        </button>
+        <button className={section === 'safe' ? 'active' : ''} onClick={() => setSection('safe')}>
+          Сейф
         </button>
         <button className={section === 'data' ? 'active' : ''} onClick={() => setSection('data')}>
           Данные
         </button>
-        <button className={section === 'profile' ? 'active' : ''} onClick={() => setSection('profile')}>
-          Аккаунт
-        </button>
       </div>
+
+      {section === 'profile' && (
+        <>
+          <section className="card">
+            <h3>Пользователь</h3>
+            {mode === 'cloud' ? (
+              <div className="profile-info">
+                <div className="profile-badge">☁️ Облако</div>
+                <p className="muted">{profile?.email ?? email}</p>
+                {profile?.createdAt && (
+                  <p className="muted small">В приложении с {new Date(profile.createdAt).toLocaleDateString('ru-RU')}</p>
+                )}
+              </div>
+            ) : (
+              <div className="profile-info">
+                <div className="profile-badge">💾 Локальный режим</div>
+                <p className="muted">
+                  Данные хранятся только в этом браузере. Чтобы синхронизировать их между ПК и телефоном, подключи
+                  Supabase — инструкция в README проекта.
+                </p>
+              </div>
+            )}
+          </section>
+
+          <section className="card">
+            <h3>Валюта</h3>
+            <select className="input" value={settings.currency} onChange={e => setCurrency(e.target.value)}>
+              {CURRENCIES.map(c => (
+                <option key={c.code} value={c.code}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </section>
+
+          {mode === 'cloud' && (
+            <section className="card">
+              <h3>Смена пароля</h3>
+              <div className="btn-col">
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="Новый пароль (минимум 6 символов)"
+                  value={newPass}
+                  onChange={e => setNewPass(e.target.value)}
+                />
+                <button className="btn btn-secondary" onClick={submitPass} disabled={passBusy}>
+                  {passBusy ? 'Меняю…' : 'Сменить пароль'}
+                </button>
+                {passMsg && <div className="info">{passMsg}</div>}
+                {passErr && <div className="error">{passErr}</div>}
+              </div>
+            </section>
+          )}
+
+          {mode === 'cloud' && (
+            <section className="card">
+              <div className="btn-col">
+                <button className="btn btn-danger" onClick={() => signOut()}>
+                  Выйти из аккаунта
+                </button>
+              </div>
+            </section>
+          )}
+
+          <footer className="app-footer">Кошелёк · v0.2</footer>
+        </>
+      )}
 
       {section === 'categories' && (
         <>
@@ -90,23 +206,37 @@ export function SettingsTab() {
         </>
       )}
 
-      {section === 'data' && (
+      {section === 'safe' && (
         <>
-          <section className="card">
-            <h3>Валюта</h3>
-            <select
-              className="input"
-              value={settings.currency}
-              onChange={e => setCurrency(e.target.value)}
-            >
-              {CURRENCIES.map(c => (
-                <option key={c.code} value={c.code}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+          <section className="card balance-card">
+            <span className="balance-label">🔐 В сейфе</span>
+            <span className="balance-value">{formatMoney(safeBal, cur)}</span>
+            <div className="piggy-actions">
+              <button className="btn btn-secondary" onClick={() => safe && setMoving({ stash: safe, type: 'in' })}>
+                Пополнить
+              </button>
+              <button className="btn btn-secondary" onClick={() => safe && setMoving({ stash: safe, type: 'out' })}>
+                Достать
+              </button>
+            </div>
           </section>
 
+          <section className="card">
+            <h3>История сейфа</h3>
+            {safeMoves.length > 0 ? (
+              <div className="op-list">{safeMoves.map(m => moveRow(m.id, m.date, m.note, m.type, m.amount))}</div>
+            ) : (
+              <div className="empty">
+                <span></span>
+                <p>Движений пока нет. Откладывай с дохода или пополняй вручную.</p>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {section === 'data' && (
+        <>
           <section className="card">
             <h3>Экспорт</h3>
             <div className="btn-col">
@@ -141,46 +271,10 @@ export function SettingsTab() {
         </>
       )}
 
-      {section === 'profile' && (
-        <>
-          <section className="card">
-            <h3>Режим работы</h3>
-            {mode === 'cloud' ? (
-              <div className="profile-info">
-                <div className="profile-badge">☁️ Облако</div>
-                <p className="muted">{email}</p>
-                <p className="muted small">
-                  Данные синхронизируются между устройствами через Supabase. Входи под этим email на телефоне и ПК.
-                </p>
-              </div>
-            ) : (
-              <div className="profile-info">
-                <div className="profile-badge">💾 Локальный режим</div>
-                <p className="muted">
-                  Данные хранятся только в этом браузере. Чтобы синхронизировать их между ПК и телефоном, подключи
-                  Supabase — инструкция в README проекта.
-                </p>
-              </div>
-            )}
-          </section>
-
-          {mode === 'cloud' && (
-            <section className="card">
-              <div className="btn-col">
-                <button className="btn btn-danger" onClick={() => signOut()}>
-                  Выйти из аккаунта
-                </button>
-              </div>
-            </section>
-          )}
-
-          <footer className="app-footer">Кошелёк · v0.1</footer>
-        </>
-      )}
-
       {editingCat && (
         <CategoryModal category={editingCat === 'new' ? null : editingCat} onClose={() => setEditingCat(null)} />
       )}
+      {moving && <StashMoveModal stash={moving.stash} initialType={moving.type} onClose={() => setMoving(null)} />}
     </div>
   )
 }

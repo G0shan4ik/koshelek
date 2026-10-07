@@ -1,7 +1,17 @@
 ﻿import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { api, cloudEnabled } from '../lib/api'
 import { localStore } from '../lib/localStore'
-import { Category, CategoryInput, Operation, OperationInput, Settings } from '../lib/types'
+import {
+  Category,
+  CategoryInput,
+  Operation,
+  OperationInput,
+  Settings,
+  Stash,
+  StashInput,
+  StashMove,
+  StashMoveInput
+} from '../lib/types'
 import { sortByDateDesc } from '../lib/stats'
 
 const SETTINGS_KEY = 'koshelok:settings'
@@ -10,13 +20,21 @@ function cacheKey(userId: string): string {
   return `koshelok:cache:${userId}`
 }
 
+interface Profile {
+  email: string | null
+  createdAt: string | null
+}
+
 interface AppContextValue {
   mode: 'cloud' | 'local'
   authLoading: boolean
   userId: string | null
   email: string | null
+  profile: Profile | null
   operations: Operation[]
   categories: Category[]
+  stashes: Stash[]
+  stashMoves: StashMove[]
   dataLoading: boolean
   offline: boolean
   settings: Settings
@@ -24,12 +42,17 @@ interface AppContextValue {
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
+  changePassword: (password: string) => Promise<void>
   addOperation: (input: OperationInput) => Promise<void>
   updateOperation: (id: string, input: OperationInput) => Promise<void>
   deleteOperation: (id: string) => Promise<void>
   addCategory: (input: CategoryInput) => Promise<void>
   updateCategory: (id: string, input: CategoryInput) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
+  createStash: (input: StashInput) => Promise<void>
+  updateStash: (id: string, input: Partial<StashInput>) => Promise<void>
+  deleteStash: (id: string) => Promise<void>
+  addStashMove: (input: StashMoveInput) => Promise<void>
   refresh: () => Promise<void>
   resetLocalData: () => void
   importLocalData: (categories: Category[], operations: Operation[]) => void
@@ -41,9 +64,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const mode: 'cloud' | 'local' = cloudEnabled ? 'cloud' : 'local'
   const [userId, setUserId] = useState<string | null>(null)
   const [email, setEmail] = useState<string | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [operations, setOperations] = useState<Operation[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [stashes, setStashes] = useState<Stash[]>([])
+  const [stashMoves, setStashMoves] = useState<StashMove[]>([])
   const [dataLoading, setDataLoading] = useState(true)
   const [offline, setOffline] = useState(false)
   const [settings, setSettings] = useState<Settings>(() => {
@@ -51,6 +77,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem(SETTINGS_KEY)
       if (raw) return { currency: 'RUB', ...(JSON.parse(raw) as Partial<Settings>) }
     } catch {
+      return { currency: 'RUB' }
     }
     return { currency: 'RUB' }
   })
@@ -63,31 +90,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!id) {
         setOperations([])
         setCategories([])
+        setStashes([])
+        setStashMoves([])
+        setProfile(null)
         setDataLoading(false)
       }
     })
     return unsub
   }, [])
 
+  useEffect(() => {
+    if (!userId || mode === 'local') {
+      setProfile({ email: null, createdAt: null })
+      return
+    }
+    let mounted = true
+    api.getProfile().then(p => {
+      if (mounted) setProfile(p)
+    })
+    return () => {
+      mounted = false
+    }
+  }, [userId, mode])
+
   const loadData = useCallback(async () => {
     if (!userId) return
     setDataLoading(true)
     try {
       await api.ensureDefaultCategories()
-      const [ops, cats] = await Promise.all([api.listOperations(), api.listCategories()])
+      await api.ensureSafe()
+      const [ops, cats, sts, mvs] = await Promise.all([
+        api.listOperations(),
+        api.listCategories(),
+        api.listStashes(),
+        api.listStashMoves()
+      ])
       setOperations(ops)
       setCategories(cats)
+      setStashes(sts)
+      setStashMoves(mvs)
       setOffline(false)
     } catch {
       try {
         const raw = localStorage.getItem(cacheKey(userId))
         if (raw) {
-          const cache = JSON.parse(raw) as { operations: Operation[]; categories: Category[] }
+          const cache = JSON.parse(raw) as {
+            operations: Operation[]
+            categories: Category[]
+            stashes: Stash[]
+            stashMoves: StashMove[]
+          }
           setOperations(cache.operations ?? [])
           setCategories(cache.categories ?? [])
+          setStashes(cache.stashes ?? [])
+          setStashMoves(cache.stashMoves ?? [])
           setOffline(true)
         }
       } catch {
+        return
       }
     } finally {
       setDataLoading(false)
@@ -101,15 +161,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!userId || offline) return
     try {
-      localStorage.setItem(cacheKey(userId), JSON.stringify({ operations, categories }))
+      localStorage.setItem(cacheKey(userId), JSON.stringify({ operations, categories, stashes, stashMoves }))
     } catch {
+      return
     }
-  }, [operations, categories, userId, offline])
+  }, [operations, categories, stashes, stashMoves, userId, offline])
 
   useEffect(() => {
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
     } catch {
+      return
     }
   }, [settings])
 
@@ -127,6 +189,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOffline(false)
   }
 
+  const changePassword = async (password: string): Promise<void> => {
+    await api.changePassword(password)
+  }
+
   const addOperation = async (input: OperationInput): Promise<void> => {
     const op = await api.addOperation(input)
     setOperations(prev => sortByDateDesc([op, ...prev]))
@@ -137,9 +203,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOperations(prev =>
       sortByDateDesc(
         prev.map(o =>
-          o.id === id
-            ? { ...o, ...input, category: categories.find(c => c.id === input.category_id) ?? null }
-            : o
+          o.id === id ? { ...o, ...input, category: categories.find(c => c.id === input.category_id) ?? null } : o
         )
       )
     )
@@ -163,7 +227,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteCategory = async (id: string): Promise<void> => {
     await api.deleteCategory(id)
     setCategories(prev => prev.filter(c => c.id !== id))
-    setOperations(prev => prev.map(o => (o.category_id === id ? { ...o, category_id: null, category: null } : o)))
+    setOperations(prev =>
+      prev.map(o => (o.category_id === id ? { ...o, category_id: null, category: null } : o))
+    )
+  }
+
+  const createStash = async (input: StashInput): Promise<void> => {
+    const stash = await api.createStash(input)
+    setStashes(prev => [...prev, stash])
+  }
+
+  const updateStash = async (id: string, input: Partial<StashInput>): Promise<void> => {
+    await api.updateStash(id, input)
+    setStashes(prev => prev.map(s => (s.id === id ? { ...s, ...input } : s)))
+  }
+
+  const deleteStash = async (id: string): Promise<void> => {
+    await api.deleteStash(id)
+    setStashes(prev => prev.filter(s => s.id !== id))
+    setStashMoves(prev => prev.filter(m => m.stash_id !== id))
+  }
+
+  const addStashMove = async (input: StashMoveInput): Promise<void> => {
+    const move = await api.addStashMove(input)
+    setStashMoves(prev => sortByDateDesc([move, ...prev]))
   }
 
   const setCurrency = (currency: string): void => {
@@ -172,9 +259,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const resetLocalData = (): void => {
     api.resetLocalData()
-    setOperations([])
     setCategories(localStore.listCategories())
     setOperations(localStore.listOperations())
+    setStashes(localStore.ensureSafe())
+    setStashMoves(localStore.listStashMoves())
   }
 
   const importLocalData = (cats: Category[], ops: Operation[]): void => {
@@ -185,6 +273,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('koshelok:operations', JSON.stringify(storedOps))
     setCategories(cats)
     setOperations(storedOps.map(o => ({ ...o, category: catMap.get(o.category_id ?? '') ?? null })))
+    setStashes(localStore.ensureSafe())
+    setStashMoves(localStore.listStashMoves())
   }
 
   const value: AppContextValue = {
@@ -192,8 +282,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     authLoading,
     userId,
     email,
+    profile,
     operations,
     categories,
+    stashes,
+    stashMoves,
     dataLoading,
     offline,
     settings,
@@ -201,12 +294,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     signIn,
     signUp,
     signOut,
+    changePassword,
     addOperation,
     updateOperation,
     deleteOperation,
     addCategory,
     updateCategory,
     deleteCategory,
+    createStash,
+    updateStash,
+    deleteStash,
+    addStashMove,
     refresh: loadData,
     resetLocalData,
     importLocalData

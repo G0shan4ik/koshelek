@@ -26,3 +26,27 @@ export type OperationInput = Omit<Operation, 'id' | 'created_at' | 'category'>
 export interface Settings {
   currency: string
 }
+
+export interface Stash {
+  id: string
+  kind: 'safe' | 'piggy'
+  name: string | null
+  goal: number | null
+  icon: string
+  color: string
+  created_at: string
+}
+
+export type StashInput = Omit<Stash, 'id' | 'created_at'>
+
+export interface StashMove {
+  id: string
+  stash_id: string
+  type: 'in' | 'out'
+  amount: number
+  note: string | null
+  date: string
+  created_at: string
+}
+
+export type StashMoveInput = Omit<StashMove, 'id' | 'created_at'>

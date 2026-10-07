@@ -4,16 +4,21 @@ import { todayISO } from '../lib/format'
 import { Operation, OperationType } from '../lib/types'
 
 export function OperationModal({ operation, onClose }: { operation: Operation | null; onClose: () => void }) {
-  const { categories, addOperation, updateOperation, deleteOperation } = useApp()
+  const { categories, addOperation, updateOperation, deleteOperation, stashes, addStashMove } = useApp()
   const [type, setType] = useState<OperationType>(operation?.type ?? 'expense')
   const [amount, setAmount] = useState(operation ? String(operation.amount).replace('.', ',') : '')
   const [categoryId, setCategoryId] = useState<string | null>(operation?.category_id ?? null)
   const [date, setDate] = useState(operation?.date ?? todayISO())
   const [note, setNote] = useState(operation?.note ?? '')
+  const [safeAmount, setSafeAmount] = useState('')
+  const [piggyId, setPiggyId] = useState<string | null>(null)
+  const [piggyAmount, setPiggyAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const cats = categories.filter(c => c.type === type)
+  const safe = stashes.find(s => s.kind === 'safe')
+  const piggies = stashes.filter(s => s.kind === 'piggy')
 
   useEffect(() => {
     if (categoryId && !categories.some(c => c.id === categoryId && c.type === type)) {
@@ -21,11 +26,23 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
     }
   }, [type, categoryId, categories])
 
+  const parseSide = (s: string): number => (s.trim() === '' ? 0 : Number(s.replace(',', '.')))
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     const value = Number(amount.replace(',', '.'))
     if (!Number.isFinite(value) || value <= 0) {
       setError('Введи сумму больше нуля')
+      return
+    }
+    const safeVal = parseSide(safeAmount)
+    const piggyVal = parseSide(piggyAmount)
+    if (!Number.isFinite(safeVal) || safeVal < 0 || !Number.isFinite(piggyVal) || piggyVal < 0) {
+      setError('Некорректная сумма отложения')
+      return
+    }
+    if (!operation && type === 'income' && safeVal + piggyVal > value) {
+      setError('Отложить можно не больше суммы дохода')
       return
     }
     setBusy(true)
@@ -38,8 +55,29 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
         note: note.trim() || null,
         date
       }
-      if (operation) await updateOperation(operation.id, input)
-      else await addOperation(input)
+      if (operation) {
+        await updateOperation(operation.id, input)
+      } else {
+        await addOperation(input)
+        if (safe && safeVal > 0) {
+          await addStashMove({
+            stash_id: safe.id,
+            type: 'in',
+            amount: Math.round(safeVal * 100) / 100,
+            note: 'С дохода',
+            date
+          })
+        }
+        if (piggyId && piggyVal > 0) {
+          await addStashMove({
+            stash_id: piggyId,
+            type: 'in',
+            amount: Math.round(piggyVal * 100) / 100,
+            note: 'С дохода',
+            date
+          })
+        }
+      }
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось сохранить')
@@ -97,6 +135,50 @@ export function OperationModal({ operation, onClose }: { operation: Operation | 
               autoFocus={!operation}
             />
           </div>
+
+          {type === 'income' && !operation && (
+            <>
+              <label className="field-label">Отложить с дохода</label>
+              <div className="setaside">
+                <div className="setaside-row">
+                  <span className="op-icon" style={{ background: (safe?.color ?? '#ffd60a') + '26' }}>
+                    {safe?.icon ?? '🔐'}
+                  </span>
+                  <span className="setaside-name">В сейф</span>
+                  <input
+                    className="input setaside-input"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={safeAmount}
+                    onChange={e => setSafeAmount(e.target.value.replace(/[^\d.,]/g, '').slice(0, 15))}
+                  />
+                </div>
+                {piggies.length > 0 && (
+                  <div className="setaside-row">
+                    <select
+                      className="input setaside-select"
+                      value={piggyId ?? ''}
+                      onChange={e => setPiggyId(e.target.value || null)}
+                    >
+                      <option value="">В копилку…</option>
+                      {piggies.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.icon} {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="input setaside-input"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={piggyAmount}
+                      onChange={e => setPiggyAmount(e.target.value.replace(/[^\d.,]/g, '').slice(0, 15))}
+                    />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           <label className="field-label">Категория</label>
           <div className="cat-grid">

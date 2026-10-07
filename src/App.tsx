@@ -5,6 +5,7 @@ import { BottomNav, Tab } from './components/BottomNav'
 import { Dashboard } from './components/Dashboard'
 import { History } from './components/History'
 import { Stats } from './components/Stats'
+import { PiggiesTab } from './components/PiggiesTab'
 import { SettingsTab } from './components/SettingsTab'
 import { OperationModal } from './components/OperationModal'
 import { Operation } from './lib/types'
@@ -36,11 +37,14 @@ export default function App() {
         )}
         {tab === 'history' && <History onAdd={() => setEditing('new')} onEdit={op => setEditing(op)} />}
         {tab === 'stats' && <Stats />}
+        {tab === 'piggies' && <PiggiesTab />}
         {tab === 'settings' && <SettingsTab />}
       </main>
-      <button className="fab" onClick={() => setEditing('new')} aria-label="Добавить операцию">
-        +
-      </button>
+      {tab === 'dashboard' && (
+        <button className="fab" onClick={() => setEditing('new')} aria-label="Добавить операцию">
+          +
+        </button>
+      )}
       <BottomNav tab={tab} onChange={setTab} />
       {editing && <OperationModal operation={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </div>
